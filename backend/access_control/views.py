@@ -1,8 +1,11 @@
 from django.contrib.auth.models import User
+from django.db.models import Q
 from django.utils import timezone
 from rest_framework import status, viewsets
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from .permissions import IsAdministrator
 
 from .models import (
     Laboratory,
@@ -11,7 +14,11 @@ from .models import (
     AuthenticationEvent,
     SecurityEvent,
 )
-
+from .permissions import (
+    CanManageLaboratories,
+    CanViewSecurityEvents,
+    IsAdministrator,
+)
 from .serializers import (
     LaboratorySerializer,
     BiometricProfileSerializer,
@@ -25,26 +32,28 @@ from .serializers import (
 class LaboratoryViewSet(viewsets.ModelViewSet):
     queryset = Laboratory.objects.all()
     serializer_class = LaboratorySerializer
-
+    permission_classes = [CanManageLaboratories]
 
 class BiometricProfileViewSet(viewsets.ModelViewSet):
     queryset = BiometricProfile.objects.all()
     serializer_class = BiometricProfileSerializer
-
+    permission_classes = [IsAuthenticated]
 
 class AccessPermissionViewSet(viewsets.ModelViewSet):
     queryset = AccessPermission.objects.all()
     serializer_class = AccessPermissionSerializer
-
+    permission_classes = [IsAuthenticated]
 
 class AuthenticationEventViewSet(viewsets.ModelViewSet):
     queryset = AuthenticationEvent.objects.all()
     serializer_class = AuthenticationEventSerializer
+    permission_classes = [CanViewSecurityEvents]
 
 
 class SecurityEventViewSet(viewsets.ModelViewSet):
     queryset = SecurityEvent.objects.all()
     serializer_class = SecurityEventSerializer
+    permission_classes = [CanViewSecurityEvents]
 
 
 class AuthenticateView(APIView):
@@ -101,10 +110,14 @@ class AuthenticateView(APIView):
             )
 
         # Check permission
+        now = timezone.now()
         has_permission = AccessPermission.objects.filter(
             user=user,
             laboratory=laboratory,
             is_allowed=True,
+        ).filter(
+            Q(valid_from__isnull=True) | Q(valid_from__lte=now),
+            Q(valid_until__isnull=True) | Q(valid_until__gte=now),
         ).exists()
 
         # Final access decision
@@ -144,3 +157,4 @@ class AuthenticateView(APIView):
             },
             status=status.HTTP_403_FORBIDDEN,
         )
+
