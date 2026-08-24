@@ -2,10 +2,9 @@ from django.contrib.auth.models import User
 from django.db.models import Q
 from django.utils import timezone
 from rest_framework import status, viewsets
-from rest_framework.permissions import IsAuthenticated, AllowAny
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from .permissions import IsAdministrator
 
 from .models import (
     Laboratory,
@@ -17,7 +16,6 @@ from .models import (
 from .permissions import (
     CanManageLaboratories,
     CanViewSecurityEvents,
-    IsAdministrator,
 )
 from .serializers import (
     LaboratorySerializer,
