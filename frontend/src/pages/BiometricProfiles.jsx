@@ -1,6 +1,9 @@
-import { useState } from "react";
+import { useRef, useState, useEffect } from "react";
+import api from "../api/client";
 import { useResourceList } from "../hooks/useResource";
 import { extractErrorMessage } from "../api/client";
+import { useAuth } from "../context/AuthContext";
+import { ROLES } from "../auth/roles";
 import {
   PageHead,
   Panel,
@@ -15,11 +18,13 @@ import {
 const EMPTY_FORM = { user: "", fingerprint_id: "", face_registered: false };
 
 export default function BiometricProfiles() {
+  const { user: currentUser } = useAuth();
   const { items, loading, error, forbidden, create, update, remove } = useResourceList("/biometric-profiles/");
   const [modal, setModal] = useState(null);
   const [formError, setFormError] = useState("");
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
+  const [enrollUser, setEnrollUser] = useState(null);
 
   function openCreate() {
     setFormError("");
@@ -37,6 +42,10 @@ export default function BiometricProfiles() {
         face_registered: profile.face_registered,
       },
     });
+  }
+
+  function openEnrollment(profile) {
+    setEnrollUser(profile.user);
   }
 
   async function handleSave(e) {
@@ -128,6 +137,11 @@ export default function BiometricProfiles() {
                         <button className="btn btn-ghost btn-sm" onClick={() => openEdit(p)}>
                           Edit
                         </button>
+                        {currentUser?.role === ROLES.ADMINISTRATOR && (
+                          <button className="btn btn-ghost btn-sm" onClick={() => openEnrollment(p)}>
+                            {p.face_registered ? "Retake face" : "Enroll face"}
+                          </button>
+                        )}
                         <button
                           className="btn btn-ghost btn-sm"
                           onClick={() => handleDelete(p)}
@@ -195,6 +209,56 @@ export default function BiometricProfiles() {
           </form>
         </Modal>
       )}
+      {enrollUser && <FaceEnrollmentModal userId={enrollUser} onClose={() => setEnrollUser(null)} />}
     </>
+  );
+}
+
+function FaceEnrollmentModal({ userId, onClose }) {
+  const videoRef = useRef(null);
+  const streamRef = useRef(null);
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => () => streamRef.current?.getTracks().forEach((track) => track.stop()), []);
+
+  async function startCamera() {
+    try {
+      streamRef.current = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
+      videoRef.current.srcObject = streamRef.current;
+      await videoRef.current.play();
+    } catch {
+      setError("Camera access is required for face enrollment.");
+    }
+  }
+
+  async function capture() {
+    const video = videoRef.current;
+    if (!video?.videoWidth) return setError("Start the camera before capturing.");
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    canvas.getContext("2d").drawImage(video, 0, 0);
+    setSaving(true);
+    setError("");
+    try {
+      await api.post("/face-enroll/", { username: userId, face_image: canvas.toDataURL("image/jpeg", 0.85) });
+      onClose();
+    } catch (err) {
+      setError(extractErrorMessage(err, "The face could not be enrolled."));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Modal title="Enroll face" onClose={onClose}>
+      <ErrorAlert message={error} />
+      <video ref={videoRef} muted playsInline style={{ width: "100%", aspectRatio: "4 / 3", objectFit: "cover", background: "#101820" }} />
+      <div className="modal-actions">
+        <button type="button" className="btn" onClick={startCamera}>Start camera</button>
+        <button type="button" className="btn btn-primary" onClick={capture} disabled={saving}>{saving ? "Enrolling…" : "Capture and enroll"}</button>
+      </div>
+    </Modal>
   );
 }

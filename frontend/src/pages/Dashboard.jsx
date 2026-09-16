@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import api from "../api/client";
-import { PageHead, Panel, ResultBadge, SeverityBadge, LoadingRow, EmptyState } from "../components/ui";
+import api, { extractErrorMessage } from "../api/client";
+import { useAuth } from "../context/AuthContext";
+import { ROLES } from "../auth/roles";
+import { PageHead, Panel, ResultBadge, SeverityBadge, LoadingRow, EmptyState, ErrorAlert, Modal } from "../components/ui";
 
 // Each card fetches independently and swallows 403s to "—" rather than
 // failing the whole dashboard — a Laboratory User can't see security
@@ -11,6 +13,12 @@ function useCount(endpoint) {
   const [denied, setDenied] = useState(false);
 
   useEffect(() => {
+    if (!endpoint) {
+      setCount(null);
+      setDenied(false);
+      return undefined;
+    }
+
     let active = true;
     api
       .get(endpoint)
@@ -33,10 +41,36 @@ function useCount(endpoint) {
 }
 
 export default function Dashboard() {
+  const { user } = useAuth();
+  const isLaboratoryUser = user?.role === ROLES.LABORATORY_USER;
+  const [userModalOpen, setUserModalOpen] = useState(false);
   const labs = useCount("/laboratories/");
   const permissions = useCount("/access-permissions/");
-  const events = useResourceForFeed("/authentication-events/");
-  const security = useResourceForFeed("/security-events/");
+  const events = useResourceForFeed(isLaboratoryUser ? null : "/authentication-events/");
+  const security = useResourceForFeed(isLaboratoryUser ? null : "/security-events/");
+
+  if (isLaboratoryUser) {
+    return (
+      <>
+        <PageHead
+          eyebrow="Workspace / Laboratory access"
+          title="Laboratory workspace"
+          sub="Review laboratories and manage the access permissions assigned to you."
+        />
+        <div className="stat-grid">
+          <StatCard label="Available Laboratories" value={labs.count} denied={labs.denied} tone="accent" />
+          <StatCard label="Active Permissions" value={permissions.count} denied={permissions.denied} tone="accent" />
+        </div>
+        <Panel title="Your access workspace" sub="Use the navigation to review laboratory access and run a biometric check.">
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <Link className="btn btn-sm" to="/laboratories">Browse laboratories →</Link>
+            <Link className="btn btn-sm" to="/permissions">Review permissions →</Link>
+            <Link className="btn btn-sm" to="/authenticate">Simulate scan →</Link>
+          </div>
+        </Panel>
+      </>
+    );
+  }
 
   const grantedCount = Array.isArray(events.data)
     ? events.data.filter((e) => e.result === "GRANTED").length
@@ -51,14 +85,19 @@ export default function Dashboard() {
   return (
     <>
       <PageHead
-        eyebrow="Console / Overview"
-        title="System status"
-        sub="Live snapshot of laboratories, credentials, and recent access activity."
+        eyebrow={user?.role === ROLES.SECURITY_OFFICER ? "Monitoring / Overview" : "Console / Overview"}
+        title={user?.role === ROLES.SECURITY_OFFICER ? "Security status" : "System status"}
+        sub={user?.role === ROLES.SECURITY_OFFICER ? "Live view of authentication activity and unresolved security alerts." : "Live snapshot of laboratories, credentials, and recent access activity."}
+        action={user?.role === ROLES.ADMINISTRATOR && (
+          <button className="btn btn-primary" onClick={() => setUserModalOpen(true)}>
+            + Add user
+          </button>
+        )}
       />
 
       <div className="stat-grid">
         <StatCard label="Laboratories" value={labs.count} denied={labs.denied} tone="accent" />
-        <StatCard label="Active Permissions" value={permissions.count} denied={permissions.denied} tone="accent" />
+        {user?.role !== ROLES.SECURITY_OFFICER && <StatCard label="Active Permissions" value={permissions.count} denied={permissions.denied} tone="accent" />}
         <StatCard label="Recent — Granted" value={grantedCount} denied={events.denied} tone="granted" />
         <StatCard label="Recent — Denied" value={deniedCount} denied={events.denied} tone="denied" />
         <StatCard label="Unresolved Security Events" value={openSecurity} denied={security.denied} tone="warn" />
@@ -147,7 +186,56 @@ export default function Dashboard() {
           </div>
         </Panel>
       </div>
+      {userModalOpen && <CreateUserModal onClose={() => setUserModalOpen(false)} />}
     </>
+  );
+}
+
+function CreateUserModal({ onClose }) {
+  const [form, setForm] = useState({ username: "", password: "", role: ROLES.LABORATORY_USER });
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  async function handleSave(event) {
+    event.preventDefault();
+    setSaving(true);
+    setError("");
+    try {
+      await api.post("/users/", form);
+      onClose();
+    } catch (err) {
+      setError(extractErrorMessage(err, "Couldn't create the user."));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Modal title="Add user" onClose={onClose}>
+      <form onSubmit={handleSave}>
+        <ErrorAlert message={error} />
+        <div className="field">
+          <label htmlFor="new-user-username">Username</label>
+          <input id="new-user-username" required value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} />
+        </div>
+        <div className="field">
+          <label htmlFor="new-user-password">Temporary password</label>
+          <input id="new-user-password" type="password" minLength={8} required value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
+        </div>
+        <div className="field">
+          <label htmlFor="new-user-role">Role</label>
+          <select id="new-user-role" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
+            <option value={ROLES.ADMINISTRATOR}>Administrator</option>
+            <option value={ROLES.SECURITY_OFFICER}>Security Officer</option>
+            <option value={ROLES.LABORATORY_USER}>Laboratory User</option>
+          </select>
+        </div>
+        <div className="modal-actions">
+          <button type="button" className="btn" onClick={onClose}>Cancel</button>
+          <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? "Creating…" : "Create user"}</button>
+        </div>
+      </form>
+    </Modal>
   );
 }
 
@@ -157,6 +245,13 @@ function useResourceForFeed(endpoint) {
   const [denied, setDenied] = useState(false);
 
   useEffect(() => {
+    if (!endpoint) {
+      setData([]);
+      setLoading(false);
+      setDenied(false);
+      return undefined;
+    }
+
     let active = true;
     api
       .get(endpoint)

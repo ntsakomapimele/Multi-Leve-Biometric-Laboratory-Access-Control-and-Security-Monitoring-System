@@ -29,6 +29,12 @@ class BiometricProfile(models.Model):
         return f"{self.user.username}'s biometric profile"
 
 
+class FaceSample(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="face_samples")
+    image = models.BinaryField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+
 class AccessPermission(models.Model):
     user = models.ForeignKey(
         User,

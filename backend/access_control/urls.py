@@ -7,7 +7,9 @@ from .views import (
     AccessPermissionViewSet,
     AuthenticationEventViewSet,
     SecurityEventViewSet,
+    UserViewSet,
      AuthenticateView,
+    FaceEnrollmentView,
 )
 
 
@@ -37,7 +39,13 @@ router.register(
     r"security-events",
     SecurityEventViewSet,
 )
+
+router.register(
+    r"users",
+    UserViewSet,
+)
 urlpatterns = [
     path("authenticate/", AuthenticateView.as_view()),
+    path("face-enroll/", FaceEnrollmentView.as_view()),
 ]
 urlpatterns += router.urls

@@ -5,6 +5,9 @@ from rest_framework import status, viewsets
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework.permissions import IsAuthenticated
+import cv2
+import numpy as np
 
 from .models import (
     Laboratory,
@@ -16,6 +19,7 @@ from .models import (
 from .permissions import (
     CanManageLaboratories,
     CanViewSecurityEvents,
+    IsAdministrator,
 )
 from .serializers import (
     LaboratorySerializer,
@@ -24,7 +28,20 @@ from .serializers import (
     AuthenticationEventSerializer,
     SecurityEventSerializer,
     AccessAuthenticationSerializer,
+    UserSerializer,
 )
+from .face_recognition import extract_face, matches_sample
+from .models import FaceSample
+
+
+class UserViewSet(viewsets.ModelViewSet):
+    queryset = User.objects.all().order_by("username")
+    serializer_class = UserSerializer
+
+    def get_permissions(self):
+        if self.action == "list" or self.action == "retrieve":
+            return [IsAuthenticated()]
+        return [IsAdministrator()]
 
 
 class LaboratoryViewSet(viewsets.ModelViewSet):
@@ -55,6 +72,7 @@ class SecurityEventViewSet(viewsets.ModelViewSet):
 
 
 class AuthenticateView(APIView):
+    permission_classes = [IsAuthenticated]
 
     def post(self, request):
         serializer = AccessAuthenticationSerializer(data=request.data)
@@ -69,6 +87,7 @@ class AuthenticateView(APIView):
         laboratory_id = serializer.validated_data["laboratory_id"]
         face_verified = serializer.validated_data["face_verified"]
         fingerprint_verified = serializer.validated_data["fingerprint_verified"]
+        face_image = serializer.validated_data.get("face_image")
 
         # Find the user
         try:
@@ -91,6 +110,17 @@ class AuthenticateView(APIView):
                 },
                 status=status.HTTP_403_FORBIDDEN,
             )
+
+        if face_image:
+            try:
+                face = extract_face(face_image)
+                samples = [
+                    cv2.imdecode(np.frombuffer(bytes(sample.image), np.uint8), cv2.IMREAD_GRAYSCALE)
+                    for sample in FaceSample.objects.filter(user=user)
+                ]
+                face_verified = matches_sample(face, [sample for sample in samples if sample is not None])
+            except ValueError:
+                face_verified = False
 
         # Check laboratory
         try:
@@ -155,4 +185,25 @@ class AuthenticateView(APIView):
             },
             status=status.HTTP_403_FORBIDDEN,
         )
+
+
+class FaceEnrollmentView(APIView):
+    permission_classes = [IsAdministrator]
+
+    def post(self, request):
+        username = request.data.get("username")
+        try:
+            user = User.objects.get(username=username) if not str(username).isdigit() else User.objects.get(pk=username)
+            face = extract_face(request.data.get("face_image"))
+        except (User.DoesNotExist, ValueError) as error:
+            return Response({"detail": str(error)}, status=status.HTTP_400_BAD_REQUEST)
+
+        ok, encoded = cv2.imencode(".jpg", face)
+        if not ok:
+            return Response({"detail": "The face image could not be stored."}, status=status.HTTP_400_BAD_REQUEST)
+        FaceSample.objects.create(user=user, image=encoded.tobytes())
+        profile, _ = BiometricProfile.objects.get_or_create(user=user)
+        profile.face_registered = True
+        profile.save(update_fields=["face_registered"])
+        return Response({"user": user.username, "face_registered": True}, status=status.HTTP_201_CREATED)
 

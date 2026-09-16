@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import api, { extractErrorMessage } from "../api/client";
 import { PageHead, Panel, ErrorAlert } from "../components/ui";
 
@@ -7,6 +7,9 @@ export default function Authenticate() {
   const [username, setUsername] = useState("");
   const [laboratoryId, setLaboratoryId] = useState("");
   const [faceVerified, setFaceVerified] = useState(false);
+  const [faceImage, setFaceImage] = useState("");
+  const videoRef = useRef(null);
+  const streamRef = useRef(null);
   const [fingerprintVerified, setFingerprintVerified] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState(null);
@@ -19,6 +22,30 @@ export default function Authenticate() {
       .catch(() => setLabs([]));
   }, []);
 
+  useEffect(() => () => streamRef.current?.getTracks().forEach((track) => track.stop()), []);
+
+  async function startCamera() {
+    setError("");
+    try {
+      streamRef.current = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
+      videoRef.current.srcObject = streamRef.current;
+      await videoRef.current.play();
+    } catch {
+      setError("Camera access is required for facial verification.");
+    }
+  }
+
+  function captureFace() {
+    const video = videoRef.current;
+    if (!video?.videoWidth) return setError("Start the camera before capturing your face.");
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    canvas.getContext("2d").drawImage(video, 0, 0);
+    setFaceImage(canvas.toDataURL("image/jpeg", 0.85));
+    setFaceVerified(true);
+  }
+
   async function handleSubmit(e) {
     e.preventDefault();
     setSubmitting(true);
@@ -29,6 +56,7 @@ export default function Authenticate() {
         username,
         laboratory_id: Number(laboratoryId),
         face_verified: faceVerified,
+        face_image: faceImage,
         fingerprint_verified: fingerprintVerified,
       });
       setResult(res.data);
@@ -57,6 +85,15 @@ export default function Authenticate() {
         <Panel accent title="Reader input" sub="Enter the credentials the badge station would report.">
           <form onSubmit={handleSubmit}>
             <ErrorAlert message={error} />
+            <div className="field" style={{ marginBottom: 14 }}>
+              <label>Face camera</label>
+              <video ref={videoRef} muted playsInline style={{ width: "100%", aspectRatio: "4 / 3", objectFit: "cover", background: "#101820" }} />
+              <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                <button type="button" className="btn btn-sm" onClick={startCamera}>Start camera</button>
+                <button type="button" className="btn btn-sm" onClick={captureFace}>Capture face</button>
+              </div>
+              <span className="field-hint">Capture one clear face. The server detects and compares it with the enrolled profile.</span>
+            </div>
             <div className="field" style={{ marginBottom: 14 }}>
               <label htmlFor="scan-user">Username</label>
               <input id="scan-user" type="text" required value={username} onChange={(e) => setUsername(e.target.value)} />

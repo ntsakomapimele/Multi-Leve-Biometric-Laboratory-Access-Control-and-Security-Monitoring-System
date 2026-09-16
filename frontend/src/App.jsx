@@ -13,9 +13,9 @@ import SecurityEvents from "./pages/SecurityEvents";
 import Authenticate from "./pages/Authenticate";
 import NotFound from "./pages/NotFound";
 
-function Protected({ children }) {
+function Protected({ children, path }) {
   return (
-    <ProtectedRoute>
+    <ProtectedRoute path={path}>
       <Layout>{children}</Layout>
     </ProtectedRoute>
   );
@@ -27,13 +27,13 @@ export default function App() {
       <Routes>
         <Route path="/login" element={<Login />} />
 
-        <Route path="/" element={<Protected><Dashboard /></Protected>} />
-        <Route path="/laboratories" element={<Protected><Laboratories /></Protected>} />
-        <Route path="/biometric-profiles" element={<Protected><BiometricProfiles /></Protected>} />
-        <Route path="/permissions" element={<Protected><AccessPermissions /></Protected>} />
-        <Route path="/authentication-events" element={<Protected><AuthenticationEvents /></Protected>} />
-        <Route path="/security-events" element={<Protected><SecurityEvents /></Protected>} />
-        <Route path="/authenticate" element={<Protected><Authenticate /></Protected>} />
+        <Route path="/" element={<Protected path="/"><Dashboard /></Protected>} />
+        <Route path="/laboratories" element={<Protected path="/laboratories"><Laboratories /></Protected>} />
+        <Route path="/biometric-profiles" element={<Protected path="/biometric-profiles"><BiometricProfiles /></Protected>} />
+        <Route path="/permissions" element={<Protected path="/permissions"><AccessPermissions /></Protected>} />
+        <Route path="/authentication-events" element={<Protected path="/authentication-events"><AuthenticationEvents /></Protected>} />
+        <Route path="/security-events" element={<Protected path="/security-events"><SecurityEvents /></Protected>} />
+        <Route path="/authenticate" element={<Protected path="/authenticate"><Authenticate /></Protected>} />
 
         <Route path="*" element={<NotFound />} />
       </Routes>

@@ -1,5 +1,6 @@
 import { NavLink } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import { canAccess } from "../auth/roles";
 
 const NAV_SECTIONS = [
   {
@@ -29,6 +30,10 @@ const NAV_SECTIONS = [
 
 export default function Layout({ children }) {
   const { user, logout } = useAuth();
+  const visibleSections = NAV_SECTIONS.map((section) => ({
+    ...section,
+    items: section.items.filter((item) => canAccess(user?.role, item.to)),
+  })).filter((section) => section.items.length > 0);
   const initials = (user?.username || "?").slice(0, 2).toUpperCase();
 
   return (
@@ -43,7 +48,7 @@ export default function Layout({ children }) {
         </div>
 
         <nav>
-          {NAV_SECTIONS.map((section) => (
+          {visibleSections.map((section) => (
             <div className="nav-group" key={section.label}>
               <div className="nav-label">{section.label}</div>
               {section.items.map((item) => (

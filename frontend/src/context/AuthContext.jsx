@@ -1,13 +1,9 @@
 import { createContext, useContext, useEffect, useMemo, useState, useCallback } from "react";
 import api, { tokenStore, extractErrorMessage } from "../api/client";
+import { getRole } from "../auth/roles";
 
 const AuthContext = createContext(null);
 
-// Decodes the JWT payload just to recover the username/user id for display
-// — the backend has no /api/me/ endpoint, and SimpleJWT's default claims
-// don't include group membership, so this is display-only. Actual access
-// to each resource is always enforced (and reported) by the Django
-// permission classes, not by anything decided here.
 function decodeJwtPayload(token) {
   try {
     const [, payload] = token.split(".");
@@ -26,7 +22,7 @@ export function AuthProvider({ children }) {
     const token = tokenStore.getAccess();
     if (token) {
       const payload = decodeJwtPayload(token);
-      setUser(payload ? { id: payload.user_id, username: payload.username } : { username: "operator" });
+      setUser(payload ? { id: payload.user_id, username: payload.username, roles: payload.roles || [], role: getRole(payload.roles) } : { username: "operator" });
     }
     setReady(true);
 
@@ -40,7 +36,8 @@ export function AuthProvider({ children }) {
       const res = await api.post("/token/", { username, password });
       tokenStore.set(res.data.access, res.data.refresh);
       const payload = decodeJwtPayload(res.data.access);
-      setUser({ id: payload?.user_id, username: payload?.username || username });
+      const roles = payload?.roles || [];
+      setUser({ id: payload?.user_id, username: payload?.username || username, roles, role: getRole(roles) });
       return { ok: true };
     } catch (err) {
       return { ok: false, message: extractErrorMessage(err, "Invalid credentials.") };

@@ -17,6 +17,7 @@ const EMPTY_FORM = { user: "", laboratory: "", is_allowed: true, valid_from: "",
 export default function AccessPermissions() {
   const { items, loading, error, forbidden, create, update, remove } = useResourceList("/access-permissions/");
   const [labs, setLabs] = useState([]);
+  const [users, setUsers] = useState([]);
   const [modal, setModal] = useState(null);
   const [formError, setFormError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -27,6 +28,10 @@ export default function AccessPermissions() {
       .get("/laboratories/")
       .then((res) => setLabs(Array.isArray(res.data) ? res.data : res.data.results || []))
       .catch(() => setLabs([]));
+    api
+      .get("/users/")
+      .then((res) => setUsers(Array.isArray(res.data) ? res.data : res.data.results || []))
+      .catch(() => setUsers([]));
   }, []);
 
   function labName(id) {
@@ -59,7 +64,7 @@ export default function AccessPermissions() {
     setFormError("");
     try {
       const payload = {
-        user: Number(modal.form.user),
+        user: modal.form.user,
         laboratory: Number(modal.form.laboratory),
         is_allowed: modal.form.is_allowed,
         valid_from: modal.form.valid_from ? new Date(modal.form.valid_from).toISOString() : null,
@@ -123,7 +128,7 @@ export default function AccessPermissions() {
             <table className="data-table">
               <thead>
                 <tr>
-                  <th>User ID</th>
+                  <th>Username</th>
                   <th>Laboratory</th>
                   <th>Allowed</th>
                   <th>Valid From</th>
@@ -134,7 +139,7 @@ export default function AccessPermissions() {
               <tbody>
                 {items.map((p) => (
                   <tr key={p.id}>
-                    <td className="mono">#{p.user}</td>
+                    <td className="mono">{p.user}</td>
                     <td>{labName(p.laboratory)}</td>
                     <td>
                       <BoolBadge value={p.is_allowed} trueLabel="ALLOWED" falseLabel="BLOCKED" />
@@ -170,15 +175,18 @@ export default function AccessPermissions() {
             <ErrorAlert message={formError} />
             <div className="form-grid">
               <div className="field">
-                <label htmlFor="ap-user">User ID</label>
-                <input
+                <label htmlFor="ap-user">Username</label>
+                <select
                   id="ap-user"
-                  type="number"
-                  min="1"
                   required
                   value={modal.form.user}
                   onChange={(e) => setModal({ ...modal, form: { ...modal.form, user: e.target.value } })}
-                />
+                >
+                  <option value="" disabled>Select username…</option>
+                  {users.map((user) => (
+                    <option key={user.id} value={user.username}>{user.username}</option>
+                  ))}
+                </select>
               </div>
               <div className="field">
                 <label htmlFor="ap-lab">Laboratory</label>
