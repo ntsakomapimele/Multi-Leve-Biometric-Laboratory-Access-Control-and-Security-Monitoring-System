@@ -13,6 +13,7 @@ export const ROLE_ACCESS = {
     "/authentication-events",
     "/security-events",
     "/authenticate",
+    "/terminal",
   ],
   [ROLES.SECURITY_OFFICER]: [
     "/",
@@ -21,9 +22,9 @@ export const ROLE_ACCESS = {
     "/permissions",
     "/authentication-events",
     "/security-events",
-    "/authenticate",
+    "/terminal",
   ],
-  [ROLES.LABORATORY_USER]: ["/", "/laboratories", "/biometric-profiles", "/permissions", "/authenticate"],
+  [ROLES.LABORATORY_USER]: ["/", "/laboratories", "/biometric-profiles", "/permissions", "/terminal"],
 };
 
 export function getRole(roles = []) {

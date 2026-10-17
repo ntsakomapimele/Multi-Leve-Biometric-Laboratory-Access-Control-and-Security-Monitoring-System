@@ -887,3 +887,137 @@ textarea:focus {
     grid-template-columns: 1fr !important;
   }
 }
+
+/* ---------- access terminal and hardware readiness ---------- */
+
+.terminal-shell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(135deg, rgba(22, 35, 43, 0.76), transparent 42%), var(--bg);
+}
+.terminal-header {
+  min-height: 66px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 12px 30px;
+  background: rgba(16, 20, 27, 0.9);
+  border-bottom: 1px solid var(--border);
+}
+.terminal-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
+  font-weight: 800;
+}
+.terminal-brand .brand-mark { width: 24px; height: 24px; }
+.terminal-brand > span:last-child,
+.terminal-device-state,
+.terminal-kicker,
+.device-chip,
+.reader-step-state,
+.door-disclaimer,
+.terminal-footer,
+.hardware-mode {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.09em;
+}
+.terminal-brand > span:last-child { color: var(--text-faint); font-weight: 500; }
+.terminal-device-state { display: flex; align-items: center; gap: 10px; color: var(--text-dim); }
+.terminal-divider { height: 16px; border-left: 1px solid var(--border-strong); }
+.terminal-exit { margin-left: 12px; color: var(--text); text-decoration: none; font-family: var(--font-display); font-size: 12px; letter-spacing: 0; }
+.terminal-main { width: min(1180px, 100%); margin: 0 auto; padding: 44px 30px 34px; flex: 1; }
+.terminal-intro { margin-bottom: 25px; }
+.terminal-intro h1 { margin: 0; font-size: 30px; }
+.terminal-intro > p:last-child { color: var(--text-dim); margin: 7px 0 0; font-size: 13px; }
+.terminal-grid { display: grid; grid-template-columns: minmax(0, 1.08fr) minmax(360px, 0.92fr); gap: 16px; }
+.terminal-camera-panel,
+.terminal-checks-panel { min-width: 0; background: rgba(23, 28, 37, 0.92); border: 1px solid var(--border); padding: 22px; position: relative; }
+.terminal-camera-panel::before,
+.terminal-checks-panel::before { content: ""; position: absolute; width: 10px; height: 10px; top: -1px; left: -1px; border-left: 1px solid var(--accent); border-top: 1px solid var(--accent); }
+.terminal-panel-head,
+.hardware-readiness-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.terminal-kicker { color: var(--accent); }
+.terminal-panel-head h2,
+.terminal-checks-panel h2,
+.hardware-readiness h2 { font-size: 16px; margin: 5px 0 16px; }
+.terminal-panel-head h2 { margin-bottom: 0; }
+.device-chip { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--border); padding: 7px 8px; color: var(--text-dim); white-space: nowrap; }
+.device-chip.online { color: var(--granted); border-color: rgba(69, 201, 154, 0.35); }
+.terminal-camera { aspect-ratio: 4 / 3; position: relative; overflow: hidden; background: #090d12; border: 1px solid var(--border-strong); margin-top: 17px; }
+.terminal-camera video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+.camera-placeholder { position: absolute; inset: 0; z-index: 1; display: flex; flex-direction: column; gap: 12px; align-items: center; justify-content: center; color: var(--text-faint); font-family: var(--font-mono); font-size: 11px; }
+.camera-crosshair { width: 82px; height: 102px; border: 1px solid var(--border-strong); border-radius: 46% 46% 42% 42%; display: grid; place-items: center; font-size: 25px; color: var(--border-strong); }
+.terminal-camera:not(:has(video[src])) .camera-placeholder { background: rgba(9, 13, 18, 0.45); }
+.capture-label { position: absolute; z-index: 2; left: 10px; bottom: 10px; display: inline-flex; gap: 7px; align-items: center; padding: 6px 8px; background: rgba(9, 13, 18, 0.82); color: var(--text); font: 10px var(--font-mono); }
+.terminal-actions { display: flex; gap: 9px; margin-top: 12px; }
+.fingerprint-action { display: grid; gap: 9px; margin-top: 18px; padding-top: 15px; border-top: 1px solid var(--border); }
+.fingerprint-action h3 { margin: 0; font-size: 13px; }
+.fingerprint-action > div > p,
+.fingerprint-status { margin: 5px 0 0; color: var(--text-dim); font-size: 11px; line-height: 1.5; }
+.fingerprint-action .btn { justify-self: start; }
+.fingerprint-status { color: var(--text-faint); }
+.terminal-note { color: var(--text-faint); font-size: 11px; line-height: 1.5; margin: 12px 0 0; }
+.terminal-error { color: var(--denied); font-size: 12px; margin: 8px 0; }
+.status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-faint); display: inline-block; flex: 0 0 7px; }
+.status-good { background: var(--granted); box-shadow: 0 0 8px rgba(69, 201, 154, 0.55); }
+.status-warning { background: var(--warn); box-shadow: 0 0 8px rgba(227, 168, 87, 0.45); }
+.status-online { background: var(--granted); }
+.reader-sequence { list-style: none; padding: 0; margin: 0 0 21px; }
+.reader-step { display: grid; grid-template-columns: 30px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 12px 0; border-bottom: 1px solid var(--border); }
+.reader-step-index { width: 25px; height: 25px; display: grid; place-items: center; color: var(--text-faint); border: 1px solid var(--border-strong); font: 10px var(--font-mono); }
+.reader-step > div { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.reader-step strong { font-size: 12px; }
+.reader-step > div > span { color: var(--text-faint); font-size: 11px; overflow-wrap: anywhere; }
+.reader-step-state { color: var(--text-faint); font-size: 9px; }
+.reader-step.success .reader-step-index, .reader-step.success .reader-step-state { color: var(--granted); border-color: var(--granted); }
+.reader-step.failed .reader-step-index, .reader-step.failed .reader-step-state { color: var(--denied); border-color: var(--denied); }
+.reader-step.active .reader-step-index, .reader-step.active .reader-step-state { color: var(--accent); border-color: var(--accent); }
+.reader-step.offline .reader-step-index, .reader-step.offline .reader-step-state { color: var(--warn); border-color: var(--warn); }
+.terminal-form { display: grid; gap: 12px; }
+.terminal-form .field { margin: 0; }
+.terminal-submit { width: 100%; justify-content: center; margin-top: 2px; min-height: 42px; }
+.terminal-decision { display: flex; align-items: center; gap: 16px; margin-top: 16px; padding: 17px; border: 1px solid; }
+.terminal-decision.granted { border-color: rgba(69, 201, 154, 0.45); background: var(--granted-soft); }
+.terminal-decision.denied { border-color: rgba(239, 106, 106, 0.45); background: var(--denied-soft); }
+.decision-icon { width: 36px; height: 36px; flex: 0 0 36px; display: grid; place-items: center; border: 1px solid currentColor; font: 18px var(--font-mono); }
+.granted .decision-icon { color: var(--granted); }
+.denied .decision-icon { color: var(--denied); }
+.decision-copy { flex: 1; min-width: 0; }
+.decision-copy h2 { font-size: 17px; margin: 5px 0; }
+.decision-copy p { color: var(--text-dim); font-size: 12px; margin: 0 0 7px; }
+.door-disclaimer { color: var(--warn); font-size: 9px; }
+.terminal-footer { display: flex; justify-content: space-between; gap: 12px; padding: 14px 30px; color: var(--text-faint); border-top: 1px solid var(--border); }
+.hardware-readiness { margin-top: 16px; padding: 18px 20px; border: 1px solid var(--border); background: var(--panel); }
+.hardware-readiness-head h2 { margin: 4px 0 0; }
+.hardware-mode { display: flex; align-items: center; gap: 8px; color: var(--warn); }
+.hardware-state-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 15px; border-top: 1px solid var(--border); }
+.hardware-state { display: flex; align-items: flex-start; gap: 9px; padding: 14px 12px 2px 0; }
+.hardware-state > .status-dot { margin-top: 4px; }
+.hardware-state > div { display: flex; flex-direction: column; gap: 3px; }
+.hardware-label { color: var(--text-dim); font-size: 11px; }
+.hardware-state strong { font-size: 12px; }
+.hardware-state small { color: var(--text-faint); font-size: 10px; }
+
+@media (max-width: 860px) {
+  .terminal-header { align-items: flex-start; padding: 14px 18px; }
+  .terminal-device-state { flex-wrap: wrap; justify-content: flex-end; font-size: 9px; }
+  .terminal-main { padding: 30px 18px 24px; }
+  .terminal-grid { grid-template-columns: 1fr; }
+  .terminal-footer { padding: 12px 18px; flex-wrap: wrap; }
+}
+@media (max-width: 560px) {
+  .terminal-header { flex-direction: column; gap: 11px; }
+  .terminal-device-state { justify-content: flex-start; }
+  .terminal-intro h1 { font-size: 25px; }
+  .terminal-camera-panel, .terminal-checks-panel { padding: 16px; }
+  .device-chip { font-size: 8px; }
+  .terminal-decision { flex-wrap: wrap; }
+  .terminal-decision > .btn { margin-left: 52px; }
+  .hardware-state-grid { grid-template-columns: 1fr; }
+  .hardware-state { padding: 11px 0; border-bottom: 1px solid var(--border); }
+}

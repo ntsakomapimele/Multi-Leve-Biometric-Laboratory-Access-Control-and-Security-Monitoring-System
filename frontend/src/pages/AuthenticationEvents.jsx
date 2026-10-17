@@ -46,7 +46,7 @@ export default function AuthenticationEvents() {
       <PageHead
         eyebrow="Monitoring"
         title="Authentication Log"
-        sub="Every access attempt recorded by AuthenticateView, whether from a real reader or the Simulate Scan console."
+        sub="Access-terminal decisions and administrator reader tests, with verification details and recorded denial reasons."
       />
 
       <Panel>
@@ -80,9 +80,12 @@ export default function AuthenticationEvents() {
               <thead>
                 <tr>
                   <th>User</th>
+                  <th>Laboratory</th>
                   <th>Face</th>
                   <th>Fingerprint</th>
                   <th>Result</th>
+                  <th>Decision detail</th>
+                  <th>Source</th>
                   <th>Timestamp</th>
                   <th></th>
                 </tr>
@@ -91,11 +94,14 @@ export default function AuthenticationEvents() {
                 {filtered.map((ev) => (
                   <tr key={ev.id}>
                     <td>{ev.user_display || (ev.user != null ? `#${ev.user}` : "Unknown user")}</td>
+                    <td>{ev.laboratory_display || "Unknown laboratory"}</td>
                     <td className="mono dim">{ev.face_verified ? "✓ verified" : "— none"}</td>
                     <td className="mono dim">{ev.fingerprint_verified ? "✓ verified" : "— none"}</td>
                     <td>
                       <ResultBadge result={ev.result} />
                     </td>
+                    <td className="dim">{ev.denial_reason || "All checks passed"}</td>
+                    <td><span className="badge badge-neutral">{ev.source === "READER_TEST" ? "TEST" : "TERMINAL"}</span></td>
                     <td className="mono dim">{new Date(ev.timestamp).toLocaleString()}</td>
                     <td>
                       <button

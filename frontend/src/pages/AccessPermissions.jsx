@@ -109,7 +109,7 @@ export default function AccessPermissions() {
       <PageHead
         eyebrow="Access Control"
         title="Access Permissions"
-        sub="Which users may enter which laboratories, and the window each grant is valid for. Enforced by AuthenticateView on every scan."
+        sub="Which users may enter which laboratories, and the window each grant is valid for. Checked at every access terminal scan."
         action={
           <button className="btn btn-primary" onClick={openCreate}>
             + Grant permission

@@ -11,6 +11,17 @@ https://docs.djangoproject.com/en/5.1/ref/settings/
 """
 
 from pathlib import Path
+import os
+
+ESP32_DEVICE_URL = os.environ.get(
+    "ESP32_DEVICE_URL",
+    "http://192.168.1.102:8080",
+).rstrip("/")
+
+ESP32_DEVICE_KEY = os.environ.get(
+    "ESP32_DEVICE_KEY",
+    "8Po8Y6nWsZwm0fv03x4sbt9fk_0uA_qefp2WKrg5H4k",
+)
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -25,7 +36,9 @@ SECRET_KEY = "django-insecure--olu3hcl5&xop1dkci@h@t&c+jo$h6)7(v%p(r(5wxa6fp81p8
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = [    "127.0.0.1",
+    "localhost",
+    "10.17.246.5",]
 
 
 # Application definition

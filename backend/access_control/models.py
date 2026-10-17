@@ -1,5 +1,7 @@
 from django.contrib.auth.models import User
 from django.db import models
+import uuid
+from django.utils import timezone
 
 
 class Laboratory(models.Model):
@@ -28,6 +30,39 @@ class BiometricProfile(models.Model):
     def __str__(self):
         return f"{self.user.username}'s biometric profile"
 
+class FingerprintChallenge(models.Model):
+    token = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        editable=False,
+    )
+
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="fingerprint_challenges",
+    )
+
+    laboratory = models.ForeignKey(
+        Laboratory,
+        on_delete=models.CASCADE,
+        related_name="fingerprint_challenges",
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    expires_at = models.DateTimeField()
+
+    used_at = models.DateTimeField(
+        null=True,
+        blank=True,
+    )
+
+    def __str__(self):
+        return (
+            f"Fingerprint challenge for "
+            f"{self.user.username} - {self.laboratory.name}"
+        )
 
 class FaceSample(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="face_samples")
@@ -59,9 +94,17 @@ class AuthenticationEvent(models.Model):
         ("GRANTED", "Granted"),
         ("DENIED", "Denied"),
     ]
+    SOURCE_CHOICES = [("TERMINAL", "Access terminal"), ("READER_TEST", "Reader test")]
 
     user = models.ForeignKey(
         User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="authentication_events",
+    )
+    laboratory = models.ForeignKey(
+        Laboratory,
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
@@ -73,6 +116,8 @@ class AuthenticationEvent(models.Model):
         max_length=10,
         choices=RESULT_CHOICES,
     )
+    denial_reason = models.CharField(max_length=255, blank=True)
+    source = models.CharField(max_length=16, choices=SOURCE_CHOICES, default="TERMINAL")
     timestamp = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):

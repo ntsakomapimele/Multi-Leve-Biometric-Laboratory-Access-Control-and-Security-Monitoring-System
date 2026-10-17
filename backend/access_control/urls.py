@@ -8,7 +8,9 @@ from .views import (
     AuthenticationEventViewSet,
     SecurityEventViewSet,
     UserViewSet,
-     AuthenticateView,
+    AuthenticateView,
+    FingerprintScanView,
+    ReaderTestView,
     FaceEnrollmentView,
 )
 
@@ -46,6 +48,8 @@ router.register(
 )
 urlpatterns = [
     path("authenticate/", AuthenticateView.as_view()),
+    path("fingerprint-scan/", FingerprintScanView.as_view()),
+    path("reader-test/", ReaderTestView.as_view()),
     path("face-enroll/", FaceEnrollmentView.as_view()),
 ]
 urlpatterns += router.urls

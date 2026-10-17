@@ -37,5 +37,6 @@ def matches_sample(face, samples):
     if not samples:
         return False
     recognizer = cv2.face.LBPHFaceRecognizer_create()
-    recognizer.train([face], np.array([1]))
-    return any(recognizer.predict(sample)[1] <= CONFIDENCE_THRESHOLD for sample in samples)
+    recognizer.train(samples, np.ones(len(samples), dtype=np.int32))
+    _, confidence = recognizer.predict(face)
+    return confidence <= CONFIDENCE_THRESHOLD

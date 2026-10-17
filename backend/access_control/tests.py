@@ -12,6 +12,7 @@ class AuthenticateViewTests(TestCase):
 	def setUp(self):
 		self.client = APIClient()
 		self.user = User.objects.create_user(username="researcher")
+		self.user.groups.create(name="Administrator")
 		self.client.force_authenticate(self.user)
 		self.laboratory = Laboratory.objects.create(
 			name="Materials Lab",
@@ -32,10 +33,11 @@ class AuthenticateViewTests(TestCase):
 			valid_until=timezone.now() + timedelta(minutes=1),
 		)
 
-		response = self.client.post("/api/authenticate/", self.payload)
+		response = self.client.post("/api/reader-test/", self.payload)
 
 		self.assertEqual(response.status_code, 200)
 		self.assertEqual(response.data["result"], "GRANTED")
+		self.assertEqual(response.data["source"], "READER_TEST")
 		self.assertEqual(AuthenticationEvent.objects.count(), 1)
 
 	def test_denies_access_when_permission_is_outside_validity_window(self):
@@ -45,22 +47,39 @@ class AuthenticateViewTests(TestCase):
 			valid_until=timezone.now() - timedelta(minutes=1),
 		)
 
-		response = self.client.post("/api/authenticate/", self.payload)
+		response = self.client.post("/api/reader-test/", self.payload)
 
 		self.assertEqual(response.status_code, 403)
 		self.assertEqual(response.data["result"], "DENIED")
+		self.assertEqual(response.data["denial_reason"], "No active permission for this laboratory.")
 
-	def test_denies_access_when_biometric_check_fails(self):
+	def test_live_terminal_requires_a_face_image_and_never_trusts_client_flags(self):
 		AccessPermission.objects.create(
 			user=self.user,
 			laboratory=self.laboratory,
 		)
-		self.payload["face_verified"] = False
+		response = self.client.post(
+			"/api/authenticate/",
+			{"username": self.user.username, "laboratory_id": self.laboratory.id, "face_verified": True, "fingerprint_verified": True},
+			format="json",
+		)
 
-		response = self.client.post("/api/authenticate/", self.payload)
+		self.assertEqual(response.status_code, 400)
+
+	def test_live_terminal_denies_while_fingerprint_reader_is_offline(self):
+		AccessPermission.objects.create(user=self.user, laboratory=self.laboratory)
+		with self.settings():
+			from unittest.mock import patch
+			with patch("access_control.views.extract_face", return_value=object()), patch("access_control.views.matches_sample", return_value=True):
+				response = self.client.post(
+					"/api/authenticate/",
+					{"username": self.user.username, "laboratory_id": self.laboratory.id, "face_image": "captured-frame"},
+					format="json",
+				)
 
 		self.assertEqual(response.status_code, 403)
 		self.assertEqual(response.data["result"], "DENIED")
+		self.assertEqual(response.data["denial_reason"], "Fingerprint reader is offline.")
 
 
 class UserAndPermissionApiTests(TestCase):
@@ -98,6 +117,15 @@ class UserAndPermissionApiTests(TestCase):
 		created = User.objects.get(username="new-user")
 		self.assertTrue(created.check_password("new-user-pass"))
 		self.assertTrue(created.groups.filter(name="Laboratory User").exists())
+
+	def test_reader_test_is_administrator_only(self):
+		self.client.force_authenticate(self.operator)
+		response = self.client.post(
+			"/api/reader-test/",
+			{"username": self.operator.username, "laboratory_id": self.laboratory.id, "face_verified": True, "fingerprint_verified": True},
+			format="json",
+		)
+		self.assertEqual(response.status_code, 403)
 
 	def test_permission_accepts_username(self):
 		self.client.force_authenticate(self.admin)

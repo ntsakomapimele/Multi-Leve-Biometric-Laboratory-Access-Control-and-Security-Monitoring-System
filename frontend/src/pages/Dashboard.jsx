@@ -65,7 +65,7 @@ export default function Dashboard() {
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
             <Link className="btn btn-sm" to="/laboratories">Browse laboratories →</Link>
             <Link className="btn btn-sm" to="/permissions">Review permissions →</Link>
-            <Link className="btn btn-sm" to="/authenticate">Simulate scan →</Link>
+            <Link className="btn btn-sm" to="/terminal">Open access terminal →</Link>
           </div>
         </Panel>
       </>
@@ -118,9 +118,11 @@ export default function Dashboard() {
                 <thead>
                   <tr>
                     <th>User</th>
+                    <th>Laboratory</th>
                     <th>Face</th>
                     <th>Fingerprint</th>
                     <th>Result</th>
+                    <th>Decision detail</th>
                     <th>Time</th>
                   </tr>
                 </thead>
@@ -128,11 +130,13 @@ export default function Dashboard() {
                   {events.data.slice(0, 6).map((ev) => (
                     <tr key={ev.id}>
                       <td>{ev.user_display || ev.user || "Unknown"}</td>
+                      <td>{ev.laboratory_display || "Unknown laboratory"}</td>
                       <td className="mono dim">{ev.face_verified ? "✓" : "—"}</td>
                       <td className="mono dim">{ev.fingerprint_verified ? "✓" : "—"}</td>
                       <td>
                         <ResultBadge result={ev.result} />
                       </td>
+                      <td className="dim">{ev.denial_reason || "All checks passed"}</td>
                       <td className="mono dim">{formatTime(ev.timestamp)}</td>
                     </tr>
                   ))}
@@ -186,6 +190,19 @@ export default function Dashboard() {
           </div>
         </Panel>
       </div>
+      {user?.role !== ROLES.LABORATORY_USER && (
+        <div className="hardware-readiness">
+          <div className="hardware-readiness-head">
+            <div><span className="terminal-kicker">SYSTEM READINESS</span><h2>Reader hardware</h2></div>
+            <span className="hardware-mode"><span className="status-dot status-warning" />TEST MODE</span>
+          </div>
+          <div className="hardware-state-grid">
+            <HardwareState label="Face recognition" state="Configured" tone="good" detail="OpenCV service" />
+            <HardwareState label="Fingerprint reader" state="Offline" tone="warning" detail="No sensor connected" />
+            <HardwareState label="Door controller" state="Not connected" tone="warning" detail="No physical release" />
+          </div>
+        </div>
+      )}
       {userModalOpen && <CreateUserModal onClose={() => setUserModalOpen(false)} />}
     </>
   );
@@ -253,7 +270,7 @@ function useResourceForFeed(endpoint) {
     }
 
     let active = true;
-    api
+    const refresh = () => api
       .get(endpoint)
       .then((res) => {
         if (!active) return;
@@ -267,12 +284,24 @@ function useResourceForFeed(endpoint) {
         else setData([]);
       })
       .finally(() => active && setLoading(false));
+    refresh();
+    const timer = window.setInterval(refresh, 15000);
     return () => {
       active = false;
+      window.clearInterval(timer);
     };
   }, [endpoint]);
 
   return { data, loading, denied };
+}
+
+function HardwareState({ label, state, tone, detail }) {
+  return (
+    <div className="hardware-state">
+      <span className={`status-dot status-${tone}`} />
+      <div><span className="hardware-label">{label}</span><strong>{state}</strong><small>{detail}</small></div>
+    </div>
+  );
 }
 
 function StatCard({ label, value, denied, tone }) {

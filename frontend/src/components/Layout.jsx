@@ -24,7 +24,10 @@ const NAV_SECTIONS = [
   },
   {
     label: "Console",
-    items: [{ to: "/authenticate", label: "Simulate Scan", icon: "▶" }],
+    items: [
+      { to: "/terminal", label: "Access Terminal", icon: "▣" },
+      { to: "/authenticate", label: "Reader Test", icon: "▶" },
+    ],
   },
 ];
 

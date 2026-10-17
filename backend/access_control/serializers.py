@@ -71,9 +71,18 @@ class AccessPermissionSerializer(serializers.ModelSerializer):
 
 
 class AuthenticationEventSerializer(serializers.ModelSerializer):
+    user_display = serializers.SerializerMethodField()
+    laboratory_display = serializers.SerializerMethodField()
+
     class Meta:
         model = AuthenticationEvent
         fields = "__all__"
+
+    def get_user_display(self, obj):
+        return obj.user.username if obj.user else "Unknown user"
+
+    def get_laboratory_display(self, obj):
+        return obj.laboratory.name if obj.laboratory else "Unknown laboratory"
 
 
 class SecurityEventSerializer(serializers.ModelSerializer):
@@ -84,9 +93,18 @@ class SecurityEventSerializer(serializers.ModelSerializer):
 class AccessAuthenticationSerializer(serializers.Serializer):
     username = serializers.CharField()
     laboratory_id = serializers.IntegerField()
+    face_image = serializers.CharField()
+    fingerprint_token = serializers.UUIDField(required=False)
+
+    
+
+
+class ReaderTestSerializer(serializers.Serializer):
+    username = serializers.CharField()
+    laboratory_id = serializers.IntegerField()
     face_verified = serializers.BooleanField()
     fingerprint_verified = serializers.BooleanField()
-    face_image = serializers.CharField(required=False, allow_blank=True)
 
 
-
+class FingerprintScanRequestSerializer(serializers.Serializer):
+    laboratory_id = serializers.IntegerField(min_value=1)
