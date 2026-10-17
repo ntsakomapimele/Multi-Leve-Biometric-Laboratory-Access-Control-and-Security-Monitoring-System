@@ -35,7 +35,7 @@ export default function App() {
         <Route path="/authentication-events" element={<Protected path="/authentication-events"><AuthenticationEvents /></Protected>} />
         <Route path="/security-events" element={<Protected path="/security-events"><SecurityEvents /></Protected>} />
         <Route path="/authenticate" element={<Protected path="/authenticate"><Authenticate /></Protected>} />
-        <Route path="/terminal" element={<ProtectedRoute path="/terminal"><AccessTerminal /></ProtectedRoute>} />
+        <Route path="/terminal" element={<AccessTerminal />} />
 
         <Route path="*" element={<NotFound />} />
       </Routes>

@@ -2,7 +2,7 @@ from django.contrib.auth.models import User
 from django.db.models import Q
 from django.utils import timezone
 from rest_framework import status, viewsets
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 import cv2
@@ -27,6 +27,7 @@ from .permissions import (
     CanManageLaboratories,
     CanViewSecurityEvents,
     IsAdministrator,
+    IsSecurityOfficer,
 )
 from .serializers import (
     LaboratorySerializer,
@@ -48,7 +49,7 @@ class UserViewSet(viewsets.ModelViewSet):
 
     def get_permissions(self):
         if self.action == "list" or self.action == "retrieve":
-            return [IsAuthenticated()]
+            return [IsSecurityOfficer()]
         return [IsAdministrator()]
 
 
@@ -57,15 +58,20 @@ class LaboratoryViewSet(viewsets.ModelViewSet):
     serializer_class = LaboratorySerializer
     permission_classes = [CanManageLaboratories]
 
+    def get_queryset(self):
+        if not self.request.user.is_authenticated:
+            return Laboratory.objects.filter(is_active=True)
+        return Laboratory.objects.all()
+
 class BiometricProfileViewSet(viewsets.ModelViewSet):
     queryset = BiometricProfile.objects.all()
     serializer_class = BiometricProfileSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsSecurityOfficer]
 
 class AccessPermissionViewSet(viewsets.ModelViewSet):
     queryset = AccessPermission.objects.all()
     serializer_class = AccessPermissionSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsSecurityOfficer]
 
 class AuthenticationEventViewSet(viewsets.ModelViewSet):
     queryset = AuthenticationEvent.objects.all()
@@ -79,7 +85,7 @@ class SecurityEventViewSet(viewsets.ModelViewSet):
     permission_classes = [CanViewSecurityEvents]
 
 class FingerprintScanView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [AllowAny]
 
     def post(self, request):
         serializer = FingerprintScanRequestSerializer(
@@ -271,7 +277,7 @@ class FingerprintScanView(APIView):
         )
 
 class AuthenticateView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [AllowAny]
 
     def post(self, request):
         serializer = AccessAuthenticationSerializer(data=request.data)
@@ -452,7 +458,7 @@ class FaceEnrollmentView(APIView):
     def post(self, request):
         username = request.data.get("username")
         try:
-            user = User.objects.get(username=username) if not str(username).isdigit() else User.objects.get(pk=username)
+            user = User.objects.get(username=username, is_active=True)
             face = extract_face(request.data.get("face_image"))
         except (User.DoesNotExist, ValueError) as error:
             return Response({"detail": str(error)}, status=status.HTTP_400_BAD_REQUEST)

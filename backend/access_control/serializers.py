@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
-from django.contrib.auth.models import User
+from django.contrib.auth.models import Group, User
+from django.db import transaction
 
 from .models import (
     Laboratory,
@@ -20,6 +21,7 @@ class RoleTokenObtainPairSerializer(TokenObtainPairSerializer):
 
 
 class UserSerializer(serializers.ModelSerializer):
+    password = serializers.CharField(write_only=True, required=False, min_length=8)
     role = serializers.ChoiceField(
         choices=["Administrator", "Security Officer", "Laboratory User"],
         write_only=True,
@@ -29,18 +31,27 @@ class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ["id", "username", "password", "is_active", "role", "roles"]
-        extra_kwargs = {"password": {"write_only": True}}
+
+    def validate(self, attrs):
+        if attrs.get("role") != "Laboratory User" and not attrs.get("password"):
+            raise serializers.ValidationError({"password": "A password is required for console users."})
+        return attrs
 
     def validate_username(self, value):
         if User.objects.filter(username__iexact=value).exists():
             raise serializers.ValidationError("A user with this username already exists.")
         return value
 
+    @transaction.atomic
     def create(self, validated_data):
         role = validated_data.pop("role")
-        password = validated_data.pop("password")
+        password = validated_data.pop("password", None)
         user = User.objects.create_user(password=password, **validated_data)
-        user.groups.create(name=role)
+        if role == "Laboratory User":
+            user.set_unusable_password()
+            user.save(update_fields=["password"])
+        role_group, _ = Group.objects.get_or_create(name=role)
+        user.groups.add(role_group)
         return user
 
     def get_roles(self, obj):
@@ -54,9 +65,15 @@ class LaboratorySerializer(serializers.ModelSerializer):
 
 
 class BiometricProfileSerializer(serializers.ModelSerializer):
+    user = serializers.SlugRelatedField(
+        slug_field="username",
+        queryset=User.objects.all(),
+    )
+
     class Meta:
         model = BiometricProfile
         fields = "__all__"
+        read_only_fields = ["face_registered"]
 
 
 class AccessPermissionSerializer(serializers.ModelSerializer):
@@ -94,7 +111,7 @@ class AccessAuthenticationSerializer(serializers.Serializer):
     username = serializers.CharField()
     laboratory_id = serializers.IntegerField()
     face_image = serializers.CharField()
-    fingerprint_token = serializers.UUIDField(required=False)
+    fingerprint_token = serializers.UUIDField()
 
     
 

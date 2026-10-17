@@ -218,7 +218,9 @@ function CreateUserModal({ onClose }) {
     setSaving(true);
     setError("");
     try {
-      await api.post("/users/", form);
+      const payload = { ...form };
+      if (payload.role === ROLES.LABORATORY_USER) delete payload.password;
+      await api.post("/users/", payload);
       onClose();
     } catch (err) {
       setError(extractErrorMessage(err, "Couldn't create the user."));
@@ -233,11 +235,7 @@ function CreateUserModal({ onClose }) {
         <ErrorAlert message={error} />
         <div className="field">
           <label htmlFor="new-user-username">Username</label>
-          <input id="new-user-username" required value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} />
-        </div>
-        <div className="field">
-          <label htmlFor="new-user-password">Temporary password</label>
-          <input id="new-user-password" type="password" minLength={8} required value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
+          <input id="new-user-username" type="text" autoComplete="username" required value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} />
         </div>
         <div className="field">
           <label htmlFor="new-user-role">Role</label>
@@ -247,6 +245,14 @@ function CreateUserModal({ onClose }) {
             <option value={ROLES.LABORATORY_USER}>Laboratory User</option>
           </select>
         </div>
+        {form.role === ROLES.LABORATORY_USER ? (
+          <p className="field-hint">Laboratory users enter through the access terminal and do not need a console password.</p>
+        ) : (
+          <div className="field">
+            <label htmlFor="new-user-password">Temporary password</label>
+            <input id="new-user-password" type="password" minLength={8} required value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
+          </div>
+        )}
         <div className="modal-actions">
           <button type="button" className="btn" onClick={onClose}>Cancel</button>
           <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? "Creating…" : "Create user"}</button>

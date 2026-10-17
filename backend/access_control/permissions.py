@@ -48,20 +48,17 @@ class CanManageLaboratories(BasePermission):
     message = "Administrator access required to modify laboratories."
 
     def has_permission(self, request, view):
+        read_only = request.method in ["GET", "HEAD", "OPTIONS"]
         if not request.user.is_authenticated:
-            return False
-
-     
-        if request.method in ["GET", "HEAD", "OPTIONS"]:
+            return read_only
+        if read_only:
             return request.user.groups.filter(
                 name__in=[
                     "Administrator",
                     "Security Officer",
-                    "Laboratory User",
                 ]
             ).exists()
 
-       
         return request.user.groups.filter(
             name="Administrator"
         ).exists()

@@ -1,7 +1,8 @@
 import { useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { ErrorAlert } from "../components/ui";
+import { ROLES } from "../auth/roles";
 
 export default function Login() {
   const { login } = useAuth();
@@ -21,7 +22,7 @@ export default function Login() {
     const res = await login(username, password);
     setSubmitting(false);
     if (res.ok) {
-      navigate(redirectTo, { replace: true });
+      navigate(res.role === ROLES.LABORATORY_USER ? "/terminal" : redirectTo, { replace: true });
     } else {
       setError(res.message);
     }
@@ -69,6 +70,10 @@ export default function Login() {
             {submitting ? "Verifying…" : "Authenticate"}
           </button>
         </form>
+        <div className="login-terminal-access">
+          <span>Laboratory user?</span>
+          <Link to="/terminal">Open access terminal</Link>
+        </div>
       </div>
     </div>
   );

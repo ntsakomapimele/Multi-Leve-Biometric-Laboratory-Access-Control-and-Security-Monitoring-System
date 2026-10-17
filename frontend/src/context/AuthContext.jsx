@@ -37,8 +37,9 @@ export function AuthProvider({ children }) {
       tokenStore.set(res.data.access, res.data.refresh);
       const payload = decodeJwtPayload(res.data.access);
       const roles = payload?.roles || [];
-      setUser({ id: payload?.user_id, username: payload?.username || username, roles, role: getRole(roles) });
-      return { ok: true };
+      const role = getRole(roles);
+      setUser({ id: payload?.user_id, username: payload?.username || username, roles, role });
+      return { ok: true, role };
     } catch (err) {
       return { ok: false, message: extractErrorMessage(err, "Invalid credentials.") };
     }

@@ -15,11 +15,11 @@ import {
   Modal,
 } from "../components/ui";
 
-const EMPTY_FORM = { user: "", fingerprint_id: "", face_registered: false };
+const EMPTY_FORM = { user: "", fingerprint_id: "" };
 
 export default function BiometricProfiles() {
   const { user: currentUser } = useAuth();
-  const { items, loading, error, forbidden, create, update, remove } = useResourceList("/biometric-profiles/");
+  const { items, loading, error, forbidden, create, update, remove, reload } = useResourceList("/biometric-profiles/");
   const [modal, setModal] = useState(null);
   const [formError, setFormError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -28,7 +28,7 @@ export default function BiometricProfiles() {
 
   function openCreate() {
     setFormError("");
-    setModal({ mode: "create", form: { ...EMPTY_FORM } });
+    setModal({ mode: "create", form: { ...EMPTY_FORM }, faceRegistered: false });
   }
 
   function openEdit(profile) {
@@ -36,10 +36,10 @@ export default function BiometricProfiles() {
     setModal({
       mode: "edit",
       id: profile.id,
+      faceRegistered: profile.face_registered,
       form: {
         user: profile.user,
         fingerprint_id: profile.fingerprint_id ?? "",
-        face_registered: profile.face_registered,
       },
     });
   }
@@ -50,20 +50,22 @@ export default function BiometricProfiles() {
 
   async function handleSave(e) {
     e.preventDefault();
+    const enrollFace = e.nativeEvent.submitter?.value === "save-and-enroll-face";
     setSaving(true);
     setFormError("");
     try {
       const payload = {
         ...modal.form,
-        user: Number(modal.form.user),
         fingerprint_id: modal.form.fingerprint_id === "" ? null : Number(modal.form.fingerprint_id),
       };
+      let savedProfile;
       if (modal.mode === "create") {
-        await create(payload);
+        savedProfile = await create(payload);
       } else {
-        await update(modal.id, payload);
+        savedProfile = await update(modal.id, payload);
       }
       setModal(null);
+      if (enrollFace) setEnrollUser(savedProfile.user);
     } catch (err) {
       setFormError(extractErrorMessage(err, "Couldn't save the biometric profile."));
     } finally {
@@ -72,7 +74,7 @@ export default function BiometricProfiles() {
   }
 
   async function handleDelete(profile) {
-    if (!confirm(`Remove biometric profile for user #${profile.user}?`)) return;
+    if (!confirm(`Remove biometric profile for ${profile.user}?`)) return;
     setDeletingId(profile.id);
     try {
       await remove(profile.id);
@@ -116,7 +118,7 @@ export default function BiometricProfiles() {
             <table className="data-table">
               <thead>
                 <tr>
-                  <th>User ID</th>
+                  <th>Username</th>
                   <th>Fingerprint ID</th>
                   <th>Face Registered</th>
                   <th>Created</th>
@@ -126,7 +128,7 @@ export default function BiometricProfiles() {
               <tbody>
                 {items.map((p) => (
                   <tr key={p.id}>
-                    <td className="mono">#{p.user}</td>
+                    <td className="mono">{p.user}</td>
                     <td className="mono dim">{p.fingerprint_id ?? "—"}</td>
                     <td>
                       <BoolBadge value={p.face_registered} />
@@ -166,16 +168,16 @@ export default function BiometricProfiles() {
             <ErrorAlert message={formError} />
             <div className="form-grid">
               <div className="field">
-                <label htmlFor="bp-user">User ID</label>
+                <label htmlFor="bp-user">Username</label>
                 <input
                   id="bp-user"
-                  type="number"
+                  type="text"
                   required
-                  min="1"
+                  autoComplete="username"
                   value={modal.form.user}
                   onChange={(e) => setModal({ ...modal, form: { ...modal.form, user: e.target.value } })}
                 />
-                <span className="field-hint">Django auth user ID — one profile per user.</span>
+                <span className="field-hint">Enter an existing Django username; each user has one profile.</span>
               </div>
               <div className="field">
                 <label htmlFor="bp-fp">Fingerprint ID</label>
@@ -189,32 +191,38 @@ export default function BiometricProfiles() {
                 <span className="field-hint">Optional — sensor-assigned template ID.</span>
               </div>
             </div>
-            <div className="field checkbox-field" style={{ marginBottom: 6 }}>
-              <input
-                id="bp-face"
-                type="checkbox"
-                checked={modal.form.face_registered}
-                onChange={(e) => setModal({ ...modal, form: { ...modal.form, face_registered: e.target.checked } })}
-              />
-              <label htmlFor="bp-face">Face template registered</label>
+            <div className="field profile-face-enrollment">
+              <label>Face recognition enrollment</label>
+              <p>
+                {modal.faceRegistered
+                  ? "A face sample is enrolled. You can capture a replacement after saving."
+                  : currentUser?.role === ROLES.ADMINISTRATOR
+                    ? "Not enrolled yet. Save the profile and continue to camera capture."
+                    : "Not enrolled yet. An administrator must complete camera enrollment."}
+              </p>
             </div>
             <div className="modal-actions">
               <button type="button" className="btn" onClick={() => setModal(null)}>
                 Cancel
               </button>
-              <button type="submit" className="btn btn-primary" disabled={saving}>
+              <button type="submit" className="btn" value="save-profile" disabled={saving}>
                 {saving ? "Saving…" : "Save profile"}
               </button>
+              {currentUser?.role === ROLES.ADMINISTRATOR && (
+                <button type="submit" className="btn btn-primary" value="save-and-enroll-face" disabled={saving}>
+                  {saving ? "Saving…" : modal.faceRegistered ? "Save & retake face" : "Save & enroll face"}
+                </button>
+              )}
             </div>
           </form>
         </Modal>
       )}
-      {enrollUser && <FaceEnrollmentModal userId={enrollUser} onClose={() => setEnrollUser(null)} />}
+      {enrollUser && <FaceEnrollmentModal username={enrollUser} onClose={() => setEnrollUser(null)} onEnrolled={reload} />}
     </>
   );
 }
 
-function FaceEnrollmentModal({ userId, onClose }) {
+function FaceEnrollmentModal({ username, onClose, onEnrolled }) {
   const videoRef = useRef(null);
   const streamRef = useRef(null);
   const [error, setError] = useState("");
@@ -242,7 +250,8 @@ function FaceEnrollmentModal({ userId, onClose }) {
     setSaving(true);
     setError("");
     try {
-      await api.post("/face-enroll/", { username: userId, face_image: canvas.toDataURL("image/jpeg", 0.85) });
+      await api.post("/face-enroll/", { username, face_image: canvas.toDataURL("image/jpeg", 0.85) });
+      await onEnrolled();
       onClose();
     } catch (err) {
       setError(extractErrorMessage(err, "The face could not be enrolled."));
@@ -252,7 +261,7 @@ function FaceEnrollmentModal({ userId, onClose }) {
   }
 
   return (
-    <Modal title="Enroll face" onClose={onClose}>
+    <Modal title={`Enroll face for ${username}`} onClose={onClose}>
       <ErrorAlert message={error} />
       <video ref={videoRef} muted playsInline style={{ width: "100%", aspectRatio: "4 / 3", objectFit: "cover", background: "#101820" }} />
       <div className="modal-actions">

@@ -24,7 +24,7 @@ export const ROLE_ACCESS = {
     "/security-events",
     "/terminal",
   ],
-  [ROLES.LABORATORY_USER]: ["/", "/laboratories", "/biometric-profiles", "/permissions", "/terminal"],
+  [ROLES.LABORATORY_USER]: ["/terminal"],
 };
 
 export function getRole(roles = []) {
@@ -35,5 +35,5 @@ export function getRole(roles = []) {
 }
 
 export function canAccess(role, path) {
-  return ROLE_ACCESS[role]?.includes(path) ?? path === "/";
+  return ROLE_ACCESS[role]?.includes(path) ?? false;
 }
