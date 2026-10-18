@@ -13,6 +13,8 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 from django.conf import settings
 from django.db import transaction
+from django.core.cache import cache
+from rest_framework.permissions import IsAuthenticated
 
 from .models import (
     Laboratory,
@@ -472,3 +474,239 @@ class FaceEnrollmentView(APIView):
         profile.save(update_fields=["face_registered"])
         return Response({"user": user.username, "face_registered": True}, status=status.HTTP_201_CREATED)
 
+
+class FingerprintEnrollmentView(APIView):
+    permission_classes = [IsAdministrator]
+
+    CACHE_KEY = "sentrylab_fingerprint_enrollment_user"
+    ENROLLMENT_TIMEOUT = 90
+
+    def device_request(self, endpoint, method="GET", payload=None):
+        device_url = getattr(settings, "ESP32_DEVICE_URL", "").rstrip("/")
+        device_key = getattr(settings, "ESP32_DEVICE_KEY", "")
+
+        if not device_url or not device_key:
+            raise ValueError("ESP32 device URL or key is not configured.")
+
+        data = None
+        headers = {"X-Device-Key": device_key}
+
+        if payload is not None:
+            data = json.dumps(payload).encode("utf-8")
+            headers["Content-Type"] = "application/json"
+
+        request = Request(
+            f"{device_url}{endpoint}",
+            data=data,
+            headers=headers,
+            method=method,
+        )
+
+        with urlopen(request, timeout=10) as response:
+            return json.loads(response.read().decode("utf-8"))
+
+    def post(self, request):
+        user_id = request.data.get("user_id")
+
+        try:
+            target_user = User.objects.get(
+                pk=user_id,
+                is_active=True,
+            )
+        except (User.DoesNotExist, TypeError, ValueError):
+            return Response(
+                {"message": "Select a valid active user."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Only one user can be enrolled at a time on this scanner.
+        if cache.get(self.CACHE_KEY):
+            return Response(
+                {"message": "Another fingerprint enrollment is in progress."},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        try:
+            device_status = self.device_request(
+                "/enrollment/status",
+                method="GET",
+            )
+
+            if device_status.get("result") not in ("IDLE", "ENROLL_IDLE"):
+                return Response(
+                    {
+                        "message": "The fingerprint reader is busy.",
+                        "device": device_status,
+                    },
+                    status=status.HTTP_409_CONFLICT,
+                )
+
+            # Store the target user before starting the physical enrollment.
+            cache.set(
+                self.CACHE_KEY,
+                target_user.pk,
+                timeout=self.ENROLLMENT_TIMEOUT,
+            )
+
+            started = self.device_request(
+                "/enrollment/start",
+                method="POST",
+                payload={},
+            )
+
+            result = started.get("result", "")
+
+            if result in ("ERROR", "FAILED", "ENROLL_FAILED"):
+                cache.delete(self.CACHE_KEY)
+                return Response(
+                    {
+                        "message": started.get(
+                            "message",
+                            "The reader could not start enrollment.",
+                        )
+                    },
+                    status=status.HTTP_502_BAD_GATEWAY,
+                )
+
+            return Response(
+                {
+                    "result": result,
+                    "user_id": target_user.pk,
+                    "username": target_user.username,
+                    "fingerprint_id": started.get("fingerprint_id", 0),
+                    "message": started.get(
+                        "message",
+                        "Enrollment started. Place your finger on the reader.",
+                    ),
+                },
+                status=status.HTTP_200_OK,
+            )
+
+        except (HTTPError, URLError, TimeoutError, ValueError) as exc:
+            cache.delete(self.CACHE_KEY)
+            return Response(
+                {"message": f"Could not start fingerprint enrollment: {exc}"},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+    def get(self, request):
+        target_user_id = cache.get(self.CACHE_KEY)
+
+        if not target_user_id:
+            return Response({
+                "result": "IDLE",
+                "message": "No enrollment is assigned to a user.",
+            })
+
+        try:
+            device_status = self.device_request(
+                "/enrollment/status",
+                method="GET",
+            )
+        except (HTTPError, URLError, TimeoutError, ValueError) as exc:
+            return Response(
+                {"message": f"Could not read the fingerprint reader: {exc}"},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+        result = device_status.get("result", "UNKNOWN")
+        fingerprint_id = device_status.get("fingerprint_id", 0)
+
+        completed_states = ("COMPLETED", "ENROLL_COMPLETED")
+        failed_states = ("FAILED", "ERROR", "ENROLL_FAILED")
+
+        if result in completed_states:
+            try:
+                with transaction.atomic():
+                    target_user = User.objects.get(
+                        pk=target_user_id,
+                        is_active=True,
+                    )
+
+                    profile, _ = BiometricProfile.objects.get_or_create(
+                        user=target_user,
+                    )
+
+                    # Do not assign an ID already associated with another user.
+                    duplicate_profile = BiometricProfile.objects.filter(
+                        fingerprint_id=fingerprint_id,
+                    ).exclude(pk=profile.pk).exists()
+
+                    if fingerprint_id < 1 or duplicate_profile:
+                        cache.delete(self.CACHE_KEY)
+                        return Response(
+                            {
+                                "result": "ERROR",
+                                "message": (
+                                    "The sensor returned an invalid or "
+                                    "already assigned fingerprint ID."
+                                ),
+                            },
+                            status=status.HTTP_409_CONFLICT,
+                        )
+
+                    profile.fingerprint_id = fingerprint_id
+                    profile.save(update_fields=["fingerprint_id"])
+
+            except User.DoesNotExist:
+                cache.delete(self.CACHE_KEY)
+                return Response(
+                    {
+                        "result": "ERROR",
+                        "message": "The selected user no longer exists.",
+                    },
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+
+            cache.delete(self.CACHE_KEY)
+
+            return Response({
+                "result": "COMPLETED",
+                "username": target_user.username,
+                "fingerprint_id": fingerprint_id,
+                "message": "Fingerprint enrolled and linked to the user.",
+            })
+
+        if result in failed_states:
+            cache.delete(self.CACHE_KEY)
+
+        return Response({
+            "result": result,
+            "fingerprint_id": fingerprint_id,
+            "duplicate_fingerprint_id": device_status.get(
+                "duplicate_fingerprint_id",
+                0,
+            ),
+            "message": device_status.get("message", ""),
+        })
+
+    def delete(self, request):
+        target_user_id = cache.get(self.CACHE_KEY)
+
+        if not target_user_id:
+            return Response({
+                "result": "IDLE",
+                "message": "No enrollment is in progress.",
+            })
+
+        try:
+            device_status = self.device_request(
+                "/enrollment/cancel",
+                method="POST",
+                payload={},
+            )
+        except (HTTPError, URLError, TimeoutError, ValueError) as exc:
+            return Response(
+                {"message": f"Could not cancel enrollment: {exc}"},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+        cache.delete(self.CACHE_KEY)
+
+        return Response({
+            "result": device_status.get("result", "CANCELLED"),
+            "message": device_status.get(
+                "message",
+                "Fingerprint enrollment cancelled.",
+            ),
+        })

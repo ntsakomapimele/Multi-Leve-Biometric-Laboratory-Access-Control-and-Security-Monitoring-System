@@ -46,12 +46,22 @@ class UserSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         role = validated_data.pop("role")
         password = validated_data.pop("password", None)
-        user = User.objects.create_user(password=password, **validated_data)
+
+        user = User.objects.create_user(
+            password=password,
+            **validated_data,
+        )
+
         if role == "Laboratory User":
             user.set_unusable_password()
             user.save(update_fields=["password"])
+
         role_group, _ = Group.objects.get_or_create(name=role)
         user.groups.add(role_group)
+
+        # Ensure the new user has a biometric profile.
+        BiometricProfile.objects.get_or_create(user=user)
+
         return user
 
     def get_roles(self, obj):
@@ -69,11 +79,22 @@ class BiometricProfileSerializer(serializers.ModelSerializer):
         slug_field="username",
         queryset=User.objects.all(),
     )
+    user_id = serializers.IntegerField(
+        source="user.id",
+        read_only=True,
+    )
 
     class Meta:
         model = BiometricProfile
-        fields = "__all__"
-        read_only_fields = ["face_registered"]
+        fields = [
+            "id",
+            "user",
+            "user_id",
+            "fingerprint_id",
+            "face_registered",
+            "created_at",
+        ]
+        read_only_fields = ["user_id", "face_registered", "created_at"]
 
 
 class AccessPermissionSerializer(serializers.ModelSerializer):

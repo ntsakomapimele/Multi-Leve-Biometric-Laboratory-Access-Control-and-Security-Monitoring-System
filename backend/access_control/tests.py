@@ -142,6 +142,7 @@ class UserAndPermissionApiTests(TestCase):
 		created = User.objects.get(username="new-user")
 		self.assertFalse(created.has_usable_password())
 		self.assertTrue(created.groups.filter(name="Laboratory User").exists())
+		self.assertTrue(BiometricProfile.objects.filter(user=created).exists())
 
 	def test_user_creation_reuses_existing_role_group(self):
 		role_group = Group.objects.create(name="Laboratory User")

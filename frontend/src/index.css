@@ -972,6 +972,7 @@ textarea:focus {
 .fingerprint-status { margin: 5px 0 0; color: var(--text-dim); font-size: 11px; line-height: 1.5; }
 .fingerprint-action .btn { justify-self: start; }
 .fingerprint-status { color: var(--text-faint); }
+.fingerprint-enrollment-status { min-height: 3em; margin: 0; color: var(--text-dim); line-height: 1.5; }
 .terminal-note { color: var(--text-faint); font-size: 11px; line-height: 1.5; margin: 12px 0 0; }
 .terminal-error { color: var(--denied); font-size: 12px; margin: 8px 0; }
 .status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-faint); display: inline-block; flex: 0 0 7px; }

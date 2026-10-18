@@ -12,6 +12,7 @@ from .views import (
     FingerprintScanView,
     ReaderTestView,
     FaceEnrollmentView,
+    FingerprintEnrollmentView,
 )
 
 
@@ -51,5 +52,20 @@ urlpatterns = [
     path("fingerprint-scan/", FingerprintScanView.as_view()),
     path("reader-test/", ReaderTestView.as_view()),
     path("face-enroll/", FaceEnrollmentView.as_view()),
+    path(
+    "fingerprint-enrollment/start/",
+    FingerprintEnrollmentView.as_view(),
+    name="fingerprint-enrollment-start",
+),
+path(
+    "fingerprint-enrollment/status/",
+    FingerprintEnrollmentView.as_view(),
+    name="fingerprint-enrollment-status",
+),
+path(
+    "fingerprint-enrollment/cancel/",
+    FingerprintEnrollmentView.as_view(),
+    name="fingerprint-enrollment-cancel",
+),
 ]
 urlpatterns += router.urls

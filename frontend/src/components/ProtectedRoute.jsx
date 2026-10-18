@@ -18,3 +18,4 @@ export default function ProtectedRoute({ children, path }) {
 
   return children;
 }
+

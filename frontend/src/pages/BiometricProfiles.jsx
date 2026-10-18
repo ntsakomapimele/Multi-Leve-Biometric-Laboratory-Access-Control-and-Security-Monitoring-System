@@ -25,6 +25,7 @@ export default function BiometricProfiles() {
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
   const [enrollUser, setEnrollUser] = useState(null);
+  const [fingerprintUser, setFingerprintUser] = useState(null);
 
   function openCreate() {
     setFormError("");
@@ -46,6 +47,13 @@ export default function BiometricProfiles() {
 
   function openEnrollment(profile) {
     setEnrollUser(profile.user);
+  }
+
+  function openFingerprintEnrollment(profile) {
+    setFingerprintUser({
+      id: profile.user_id,
+      username: profile.user,
+    });
   }
 
   async function handleSave(e) {
@@ -140,9 +148,21 @@ export default function BiometricProfiles() {
                           Edit
                         </button>
                         {currentUser?.role === ROLES.ADMINISTRATOR && (
-                          <button className="btn btn-ghost btn-sm" onClick={() => openEnrollment(p)}>
-                            {p.face_registered ? "Retake face" : "Enroll face"}
-                          </button>
+                          <>
+                            <button className="btn btn-ghost btn-sm" onClick={() => openEnrollment(p)}>
+                              {p.face_registered ? "Retake face" : "Enroll face"}
+                            </button>
+                            {p.fingerprint_id == null ? (
+                              <button
+                                className="btn btn-primary btn-sm"
+                                onClick={() => openFingerprintEnrollment(p)}
+                              >
+                                Enroll fingerprint
+                              </button>
+                            ) : (
+                              <span className="dim">Fingerprint enrolled</span>
+                            )}
+                          </>
                         )}
                         <button
                           className="btn btn-ghost btn-sm"
@@ -218,6 +238,13 @@ export default function BiometricProfiles() {
         </Modal>
       )}
       {enrollUser && <FaceEnrollmentModal username={enrollUser} onClose={() => setEnrollUser(null)} onEnrolled={reload} />}
+      {fingerprintUser && (
+        <FingerprintEnrollmentModal
+          user={fingerprintUser}
+          onClose={() => setFingerprintUser(null)}
+          onEnrolled={reload}
+        />
+      )}
     </>
   );
 }
@@ -268,6 +295,257 @@ function FaceEnrollmentModal({ username, onClose, onEnrolled }) {
         <button type="button" className="btn" onClick={startCamera}>Start camera</button>
         <button type="button" className="btn btn-primary" onClick={capture} disabled={saving}>{saving ? "Enrolling…" : "Capture and enroll"}</button>
       </div>
+    </Modal>
+  );
+}
+
+function FingerprintEnrollmentModal({ user, onClose, onEnrolled }) {
+  const [status, setStatus] = useState({
+    result: "IDLE",
+    message: "Ready to start fingerprint enrollment.",
+  });
+  const [error, setError] = useState("");
+  const [starting, setStarting] = useState(false);
+  const [polling, setPolling] = useState(false);
+  const [started, setStarted] = useState(false);
+
+  function normalizeResult(result) {
+    return (result || "").replace(/^ENROLL_/, "").toUpperCase();
+  }
+
+  function getInstruction(result) {
+    switch (normalizeResult(result)) {
+      case "WAITING_FIRST_FINGER":
+        return "Place your finger on the scanner for the first scan.";
+
+      case "WAITING_FOR_REMOVAL":
+        return "First scan captured. Remove your finger from the scanner.";
+
+      case "WAITING_SECOND_FINGER":
+        return "Place the same finger on the scanner for the second scan.";
+
+      case "COMPLETED":
+        return `Fingerprint enrolled successfully. ID: ${status.fingerprint_id}.`;
+
+      case "FAILED":
+        return status.message || "Fingerprint enrollment failed.";
+
+      case "IDLE":
+        return "Ready to start fingerprint enrollment.";
+
+      default:
+        return status.message || "Waiting for the fingerprint scanner...";
+    }
+  }
+
+  async function handleStart() {
+    setStarting(true);
+    setError("");
+
+    try {
+      const response = await api.post(
+        "/fingerprint-enrollment/start/",
+        { user_id: user.id }
+      );
+
+      setStatus(response.data);
+
+      const result = normalizeResult(response.data.result);
+
+      if (["FAILED", "ERROR"].includes(result)) {
+        setError(response.data.message || "Could not start enrollment.");
+        return;
+      }
+
+      setStarted(true);
+      setPolling(true);
+    } catch (err) {
+      setError(
+        extractErrorMessage(err, "Could not start fingerprint enrollment.")
+      );
+    } finally {
+      setStarting(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!polling) return;
+
+    let cancelled = false;
+    let timeoutId;
+
+    async function checkStatus() {
+      try {
+        const response = await api.get(
+          "/fingerprint-enrollment/status/"
+        );
+
+        if (cancelled) return;
+
+        const data = response.data;
+        const result = normalizeResult(data.result);
+
+        setStatus(data);
+
+        if (result === "COMPLETED") {
+          setPolling(false);
+          setStarted(false);
+
+          try {
+            await onEnrolled();
+          } catch {
+            setError(
+              "Enrollment succeeded, but the profile list could not be refreshed."
+            );
+          }
+
+          return;
+        }
+
+        if (result === "FAILED" || result === "ERROR") {
+          setPolling(false);
+          setStarted(false);
+          return;
+        }
+
+        if (result === "IDLE") {
+          setPolling(false);
+          setStarted(false);
+          setError(
+            "No active enrollment was found. Start enrollment again."
+          );
+          return;
+        }
+
+        timeoutId = setTimeout(checkStatus, 1000);
+      } catch (err) {
+        if (cancelled) return;
+
+        setPolling(false);
+        setStarted(false);
+        setError(
+          extractErrorMessage(err, "Could not check enrollment status.")
+        );
+      }
+    }
+
+    timeoutId = setTimeout(checkStatus, 500);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timeoutId);
+    };
+  }, [polling, onEnrolled]);
+
+  async function handleCancel() {
+    if (started) {
+      try {
+        await api.delete("/fingerprint-enrollment/cancel/");
+      } catch (err) {
+        setError(
+          extractErrorMessage(err, "Could not cancel enrollment.")
+        );
+        return;
+      }
+    }
+
+    setPolling(false);
+    onClose();
+  }
+
+  const result = normalizeResult(status.result);
+  const completed = result === "COMPLETED";
+  const failed = result === "FAILED" || result === "ERROR";
+
+  return (
+    <Modal
+      title={`Enroll fingerprint for ${user.username}`}
+      onClose={handleCancel}
+    >
+      <ErrorAlert message={error} />
+
+      <div className="field">
+        <label>Selected user</label>
+        <p className="mono">{user.username}</p>
+      </div>
+
+      <div className="field">
+        <label>Scanner status</label>
+        <p>{getInstruction(result)}</p>
+        {status.fingerprint_id > 0 && (
+          <p>
+            Fingerprint ID:{" "}
+            <strong>{status.fingerprint_id}</strong>
+          </p>
+        )}
+      </div>
+
+      {!started && !completed && (
+        <div className="modal-actions">
+          <button
+            type="button"
+            className="btn"
+            onClick={handleCancel}
+            disabled={starting}
+          >
+            Cancel
+          </button>
+
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={handleStart}
+            disabled={starting}
+          >
+            {starting ? "Starting…" : "Start enrollment"}
+          </button>
+        </div>
+      )}
+
+      {started && !completed && (
+        <div className="modal-actions">
+          <button
+            type="button"
+            className="btn"
+            onClick={handleCancel}
+          >
+            Cancel enrollment
+          </button>
+        </div>
+      )}
+
+      {completed && (
+        <div className="modal-actions">
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={onClose}
+          >
+            Done
+          </button>
+        </div>
+      )}
+
+      {failed && (
+        <div className="modal-actions">
+          <button
+            type="button"
+            className="btn"
+            onClick={handleCancel}
+          >
+            Close
+          </button>
+
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={handleStart}
+            disabled={starting}
+          >
+            Try again
+          </button>
+        </div>
+      )}
     </Modal>
   );
 }
