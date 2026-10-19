@@ -21,7 +21,7 @@ from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 from access_control.serializers import RoleTokenObtainPairSerializer
 from django.urls import path
-from access_control.views import create_initial_superuse
+from access_control.views import create_initial_superuser
 
 
 class RoleTokenObtainPairView(TokenObtainPairView):
