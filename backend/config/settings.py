@@ -12,6 +12,7 @@ https://docs.djangoproject.com/en/5.1/ref/settings/
 
 from pathlib import Path
 import os
+import dj_database_url
 
 ESP32_DEVICE_URL = os.environ.get(
     "ESP32_DEVICE_URL",
@@ -26,7 +27,16 @@ ESP32_DEVICE_KEY = os.environ.get(
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-
+if not DEBUG:
+    STORAGES = {
+        **globals().get("STORAGES", {}),
+        "staticfiles": {
+            "BACKEND": (
+                "whitenoise.storage."
+                "CompressedManifestStaticFilesStorage"
+            ),
+        },
+    }
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
 
@@ -35,12 +45,37 @@ SECRET_KEY = "django-insecure--olu3hcl5&xop1dkci@h@t&c+jo$h6)7(v%p(r(5wxa6fp81p8
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
+SECRET_KEY = os.environ.get("SECRET_KEY", "local-development-only-key")
 
+DEBUG = os.environ.get("DEBUG", "True").lower() == "true"
 ALLOWED_HOSTS = [    "127.0.0.1",
     "localhost",
-    "10.17.246.5",]
+    "10.17.246.5",
+    host.strip()
+    for host in os.environ.get(
+        "ALLOWED_HOSTS", "localhost,127.0.0.1"
+    ).split(",")
+    if host.strip()
+    ]
 
 
+
+DATABASE_URL = os.environ.get("DATABASE_URL")
+
+if DATABASE_URL:
+    DATABASES = {
+        "default": dj_database_url.parse(
+            DATABASE_URL,
+            conn_max_age=600,
+        )
+    }
+else:
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": BASE_DIR / "db.sqlite3",
+        }
+    }
 # Application definition
 
 INSTALLED_APPS = [
@@ -52,11 +87,15 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     'rest_framework',
     'access_control',
+    "corsheaders",
 ]
 
 MIDDLEWARE = [
+    
     "django.middleware.security.SecurityMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
+    "corsheaders.middleware.CorsMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
@@ -65,6 +104,14 @@ MIDDLEWARE = [
 ]
 
 ROOT_URLCONF = "config.urls"
+
+CORS_ALLOWED_ORIGINS = [
+    "https://your-sentrylab-frontend.onrender.com",
+]
+
+CSRF_TRUSTED_ORIGINS = [
+    "https://your-sentrylab-frontend.onrender.com",
+]
 
 TEMPLATES = [
     {
@@ -136,7 +183,8 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.1/howto/static-files/
 
-STATIC_URL = "static/"
+STATIC_URL = "/static/"
+STATIC_ROOT = BASE_DIR / "staticfiles"
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
