@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { NavLink } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { canAccess } from "../auth/roles";
@@ -33,21 +34,67 @@ const NAV_SECTIONS = [
 
 export default function Layout({ children }) {
   const { user, logout } = useAuth();
+  const [menuOpen, setMenuOpen] = useState(false);
   const visibleSections = NAV_SECTIONS.map((section) => ({
     ...section,
     items: section.items.filter((item) => canAccess(user?.role, item.to)),
   })).filter((section) => section.items.length > 0);
   const initials = (user?.username || "?").slice(0, 2).toUpperCase();
 
+  useEffect(() => {
+    if (!menuOpen) return undefined;
+
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape") setMenuOpen(false);
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [menuOpen]);
+
   return (
     <div className="app-shell">
-      <aside className="sidebar">
+      <button
+        className="menu-toggle"
+        type="button"
+        aria-label={menuOpen ? "Close navigation menu" : "Open navigation menu"}
+        aria-expanded={menuOpen}
+        aria-controls="primary-navigation"
+        onClick={() => setMenuOpen((open) => !open)}
+      >
+        <span />
+        <span />
+        <span />
+      </button>
+
+      {menuOpen && (
+        <button
+          className="menu-backdrop"
+          type="button"
+          aria-label="Close navigation menu"
+          onClick={() => setMenuOpen(false)}
+        />
+      )}
+
+      <aside
+        id="primary-navigation"
+        className={`sidebar${menuOpen ? " sidebar-open" : ""}`}
+      >
         <div className="brand">
           <div className="brand-mark" />
           <div className="brand-text">
             <strong>SentryLab</strong>
             <span>Access Console</span>
           </div>
+          <button
+            className="drawer-close"
+            type="button"
+            aria-label="Close navigation menu"
+            onClick={() => setMenuOpen(false)}
+          >
+            <span />
+            <span />
+          </button>
         </div>
 
         <nav>
@@ -60,6 +107,7 @@ export default function Layout({ children }) {
                   to={item.to}
                   end={item.to === "/"}
                   className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}
+                  onClick={() => setMenuOpen(false)}
                 >
                   <span className="nav-icon">{item.icon}</span>
                   {item.label}
