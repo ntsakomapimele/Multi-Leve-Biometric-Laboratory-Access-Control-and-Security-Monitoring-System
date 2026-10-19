@@ -19,11 +19,12 @@ ESP32_DEVICE_URL = os.environ.get(
     "http://192.168.1.102:8080",
 ).rstrip("/")
 
-ESP32_DEVICE_KEY = os.environ.get(
-    "ESP32_DEVICE_KEY",
-    ")nk@*2r67!6b5c1y*agr$r(t3wv=+9$2ht9egso5ogtlv^g0at",
-)
+# ESP32_DEVICE_KEY = os.environ.get(
+#     "ESP32_DEVICE_KEY",
+#     ")nk@*2r67!6b5c1y*agr$r(t3wv=+9$2ht9egso5ogtlv^g0at",
+# )
 
+ESP32_DEVICE_KEY = os.environ.get("ESP32_DEVICE_KEY", "")
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
