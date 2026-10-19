@@ -21,15 +21,37 @@ ESP32_DEVICE_URL = os.environ.get(
 
 ESP32_DEVICE_KEY = os.environ.get(
     "ESP32_DEVICE_KEY",
-    "8Po8Y6nWsZwm0fv03x4sbt9fk_0uA_qefp2WKrg5H4k",
+    "",
 )
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+# Quick-start development settings - unsuitable for production
+# See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
+
+# SECURITY WARNING: keep the secret key used in production secret!
+SECRET_KEY = os.environ.get("SECRET_KEY", "local-development-only-key")
+DEBUG = os.environ.get("DEBUG", "True").lower() == "true"
+if not DEBUG and SECRET_KEY == "local-development-only-key":
+    raise ValueError("Set SECRET_KEY in the production environment.")
+
+ALLOWED_HOSTS = [
+    host.strip()
+    for host in os.environ.get(
+        "ALLOWED_HOSTS", "localhost,127.0.0.1"
+    ).split(",")
+    if host.strip()
+]
+render_hostname = os.environ.get("RENDER_EXTERNAL_HOSTNAME")
+if render_hostname:
+    ALLOWED_HOSTS.append(render_hostname)
+
 if not DEBUG:
     STORAGES = {
-        **globals().get("STORAGES", {}),
+        "default": {
+            "BACKEND": "django.core.files.storage.FileSystemStorage",
+        },
         "staticfiles": {
             "BACKEND": (
                 "whitenoise.storage."
@@ -37,31 +59,14 @@ if not DEBUG:
             ),
         },
     }
-# Quick-start development settings - unsuitable for production
-# See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
 
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = "django-insecure--olu3hcl5&xop1dkci@h@t&c+jo$h6)7(v%p(r(5wxa6fp81p8"
-
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
-SECRET_KEY = os.environ.get("SECRET_KEY", "local-development-only-key")
-
-DEBUG = os.environ.get("DEBUG", "True").lower() == "true"
-ALLOWED_HOSTS = [    "127.0.0.1",
-    "localhost",
-    "10.17.246.5",
-    host.strip()
-    for host in os.environ.get(
-        "ALLOWED_HOSTS", "localhost,127.0.0.1"
-    ).split(",")
-    if host.strip()
-    ]
-
-
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+if not DEBUG:
+    SECURE_SSL_REDIRECT = True
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
-
 if DATABASE_URL:
     DATABASES = {
         "default": dj_database_url.parse(
@@ -76,6 +81,7 @@ else:
             "NAME": BASE_DIR / "db.sqlite3",
         }
     }
+
 # Application definition
 
 INSTALLED_APPS = [
@@ -106,11 +112,15 @@ MIDDLEWARE = [
 ROOT_URLCONF = "config.urls"
 
 CORS_ALLOWED_ORIGINS = [
-    "https://your-sentrylab-frontend.onrender.com",
+    origin.strip()
+    for origin in os.environ.get("CORS_ALLOWED_ORIGINS", "").split(",")
+    if origin.strip()
 ]
 
 CSRF_TRUSTED_ORIGINS = [
-    "https://your-sentrylab-frontend.onrender.com",
+    origin.strip()
+    for origin in os.environ.get("CSRF_TRUSTED_ORIGINS", "").split(",")
+    if origin.strip()
 ]
 
 TEMPLATES = [
@@ -130,17 +140,6 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = "config.wsgi.application"
-
-
-# Database
-# https://docs.djangoproject.com/en/5.1/ref/settings/#databases
-
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "db.sqlite3",
-    }
-}
 
 
 # Password validation
