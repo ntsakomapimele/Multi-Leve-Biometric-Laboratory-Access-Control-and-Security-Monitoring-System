@@ -20,6 +20,8 @@ from django.urls import path, include
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 from access_control.serializers import RoleTokenObtainPairSerializer
+from django.urls import path
+from access_control.views import create_initial_superuse
 
 
 class RoleTokenObtainPairView(TokenObtainPairView):
@@ -33,6 +35,12 @@ urlpatterns = [
         "api/token/",
         RoleTokenObtainPairView.as_view(),
         name="token_obtain_pair",
+    ),
+
+        path(
+        "api/initial-admin-setup/",
+        create_initial_superuser,
+        name="initial-admin-setup",
     ),
 
     path(

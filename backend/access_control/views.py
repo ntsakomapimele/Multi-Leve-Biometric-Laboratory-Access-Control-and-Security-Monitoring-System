@@ -15,6 +15,12 @@ from django.conf import settings
 from django.db import transaction
 from django.core.cache import cache
 from rest_framework.permissions import IsAuthenticated
+import os
+
+from django.contrib.auth import get_user_model
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_POST
 
 from .models import (
     Laboratory,
@@ -710,3 +716,41 @@ class FingerprintEnrollmentView(APIView):
                 "Fingerprint enrollment cancelled.",
             ),
         })
+
+
+
+
+@csrf_exempt
+@require_POST
+def create_initial_superuser(request):
+    expected_key = os.environ.get("INITIAL_ADMIN_SETUP_KEY", "")
+    supplied_key = request.headers.get("X-Setup-Key", "")
+
+    if not expected_key or supplied_key != expected_key:
+        return JsonResponse({"error": "Forbidden"}, status=403)
+
+    User = get_user_model()
+
+    if User.objects.filter(is_superuser=True).exists():
+        return JsonResponse(
+            {"error": "A superuser already exists"},
+            status=409,
+        )
+
+    username = os.environ.get("INITIAL_ADMIN_USERNAME", "")
+    email = os.environ.get("INITIAL_ADMIN_EMAIL", "")
+    password = os.environ.get("INITIAL_ADMIN_PASSWORD", "")
+
+    if not username or not email or not password:
+        return JsonResponse(
+            {"error": "Admin configuration is incomplete"},
+            status=500,
+        )
+
+    User.objects.create_superuser(
+        username=username,
+        email=email,
+        password=password,
+    )
+
+    return JsonResponse({"message": "Superuser created"}, status=201)
