@@ -422,9 +422,91 @@ class AuthenticateView(APIView):
             source=source,
         )
 
+        # Unlock only after all access checks have passed.
+        door_release = False
+        door_message = "Door remains locked."
+
+        if not access_granted:
+            door_message = "Access denied. Door remains locked."
+
+        elif source == "READER_TEST":
+            door_message = (
+                "Access checks passed. Reader test does not unlock the door."
+            )
+
+        elif source == "TERMINAL":
+            device_url = getattr(
+                settings,
+                "ESP32_DEVICE_URL",
+                "",
+            ).rstrip("/")
+
+            device_key = getattr(
+                settings,
+                "ESP32_DEVICE_KEY",
+                "",
+            )
+
+            if not device_url or not device_key:
+                door_message = (
+                    "Access granted, but the door controller "
+                    "is not configured."
+                )
+            else:
+                door_request = Request(
+                    url=f"{device_url}/door/unlock",
+                    data=b"{}",
+                    headers={
+                        "Content-Type": "application/json",
+                        "X-Device-Key": device_key,
+                    },
+                    method="POST",
+                )
+
+                try:
+                    with urlopen(
+                        door_request,
+                        timeout=10,
+                    ) as door_response:
+                        door_payload = json.loads(
+                            door_response.read().decode("utf-8")
+                        )
+
+                    if door_payload.get("result") == "UNLOCKED":
+                        door_release = True
+                        door_message = door_payload.get(
+                            "message",
+                            "Door unlocked successfully.",
+                        )
+                    else:
+                        door_message = (
+                            "Access granted, but the door controller "
+                            "did not confirm unlocking."
+                        )
+
+                except (
+                    HTTPError,
+                    URLError,
+                    TimeoutError,
+                    OSError,
+                    ValueError,
+                ):
+                    door_message = (
+                        "Access granted, but the door unlock command "
+                        "failed. Check the device connection and logs."
+                    )
+
         response_data = {
             "result": result,
-            "message": "Access decision granted." if access_granted else denial_reason,
+            "message": (
+                "Access granted and door unlocked."
+                if door_release
+                else (
+                    "Access decision granted."
+                    if access_granted
+                    else denial_reason
+                )
+            ),
             "denial_reason": denial_reason,
             "user": user.username,
             "laboratory": laboratory.name,
@@ -434,10 +516,18 @@ class AuthenticateView(APIView):
                 "fingerprint_verified": fingerprint_verified,
                 "permission_active": has_permission,
             },
-            "door_release": False,
-            "door_message": "No door controller is connected; this records an access decision only.",
+            "door_release": door_release,
+            "door_message": door_message,
         }
-        return Response(response_data, status=status.HTTP_200_OK if access_granted else status.HTTP_403_FORBIDDEN)
+
+        return Response(
+            response_data,
+            status=(
+                status.HTTP_200_OK
+                if access_granted
+                else status.HTTP_403_FORBIDDEN
+            ),
+        )
 
 
 class ReaderTestView(APIView):
