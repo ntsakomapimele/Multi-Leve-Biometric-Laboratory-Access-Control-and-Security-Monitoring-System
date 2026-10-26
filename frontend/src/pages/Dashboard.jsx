@@ -4,6 +4,7 @@ import api, { extractErrorMessage } from "../api/client";
 import { useAuth } from "../context/AuthContext";
 import { ROLES } from "../auth/roles";
 import { PageHead, Panel, ResultBadge, SeverityBadge, LoadingRow, EmptyState, ErrorAlert, Modal } from "../components/ui";
+import DoorStatusPanel from "./DoorStatusPanel";
 
 // Each card fetches independently and swallows 403s to "—" rather than
 // failing the whole dashboard — a Laboratory User can't see security
@@ -106,6 +107,14 @@ export default function Dashboard() {
   const grantRate = recentEvents?.length
     ? Math.round((grantedCount / recentEvents.length) * 100)
     : null;
+  const credentialCoverage = profileList?.length
+    ? Math.round((credentialReady / profileList.length) * 100)
+    : null;
+  const securityEventList = Array.isArray(security.data) ? security.data : null;
+  const resolvedSecurityCount = securityEventList?.filter((event) => event.resolved).length ?? null;
+  const securityResolutionRate = securityEventList?.length
+    ? Math.round((resolvedSecurityCount / securityEventList.length) * 100)
+    : null;
   const topDenial = recentEvents
     ?.filter((event) => event.result === "DENIED" && event.denial_reason)
     .reduce((counts, event) => {
@@ -118,34 +127,89 @@ export default function Dashboard() {
 
   return (
     <>
-      <PageHead
-        eyebrow={user?.role === ROLES.SECURITY_OFFICER ? "Monitoring / Overview" : "Console / Overview"}
-        title={user?.role === ROLES.SECURITY_OFFICER ? "Security status" : "System status"}
-        sub={user?.role === ROLES.SECURITY_OFFICER
-          ? "Monitor access trends, credential readiness, and unresolved alerts. User registration and biometric enrollment are administrator-only."
-          : "Live snapshot of laboratories, credentials, and recent access activity."}
-        action={user?.role === ROLES.ADMINISTRATOR && (
-          <button className="btn btn-primary" onClick={() => setUserModalOpen(true)}>
-            + Add user
-          </button>
-        )}
-      />
+      <div className="dashboard-page">
+      <section className={`dashboard-hero${user?.role === ROLES.SECURITY_OFFICER ? " dashboard-hero-security" : ""}`}>
+        <div className="dashboard-hero-copy">
+          <div className="dashboard-kicker">
+            <span className="dashboard-kicker-mark">S</span>
+            {user?.role === ROLES.SECURITY_OFFICER ? "SENTRYLAB / SECURITY OPERATIONS" : "SENTRYLAB / ADMIN CONSOLE"}
+          </div>
+          <h1>{user?.role === ROLES.SECURITY_OFFICER ? "Security overview" : "Good to see you"}<span>{user?.role === ROLES.ADMINISTRATOR ? `, ${user?.username || "Administrator"}.` : "."}</span></h1>
+          <p>{user?.role === ROLES.SECURITY_OFFICER
+            ? "Your command view for access activity, credential health, and active incidents."
+            : "Your command center for access activity, credential health, and system readiness."}</p>
+          <div className="dashboard-hero-footer">
+            <span className="dashboard-live"><span className="dashboard-live-dot" />MONITORING ACTIVE</span>
+            <span className="dashboard-update-note">Activity refreshes every 15 seconds</span>
+          </div>
+        </div>
+        <div className="dashboard-hero-side">
+          <div className="dashboard-orbit dashboard-orbit-one" />
+          <div className="dashboard-orbit dashboard-orbit-two" />
+          <div className="dashboard-hero-symbol" aria-hidden="true">⌁</div>
+          {user?.role === ROLES.ADMINISTRATOR && (
+            <button className="btn btn-primary dashboard-add-user" onClick={() => setUserModalOpen(true)}>
+              <span>＋</span> Register user
+            </button>
+          )}
+        </div>
+      </section>
 
-      <div className="stat-grid">
-        <StatCard label="Laboratories" value={labs.count} denied={labs.denied || Boolean(labs.error)} tone="accent" />
-        {user?.role === ROLES.ADMINISTRATOR && <StatCard label="Permission records" value={permissions.count} denied={permissions.denied || Boolean(permissions.error)} tone="accent" />}
-        <StatCard label="Access attempts · 24h" value={recentEvents?.length ?? null} denied={events.denied || Boolean(events.error)} tone="accent" />
-        <StatCard label="Grant rate · 24h" value={grantRate === null ? (recentEvents?.length === 0 ? "—" : null) : `${grantRate}%`} denied={events.denied || Boolean(events.error)} tone="granted" />
+      <div className="stat-grid dashboard-stats">
+        <StatCard icon="⌂" label="Laboratories" value={labs.count} denied={labs.denied || Boolean(labs.error)} tone="accent" detail="In your network" />
+        {user?.role === ROLES.ADMINISTRATOR && <StatCard icon="◇" label="Permission records" value={permissions.count} denied={permissions.denied || Boolean(permissions.error)} tone="accent" detail="Access assignments" />}
+        <StatCard icon="↗" label="Access attempts" value={recentEvents?.length ?? null} denied={events.denied || Boolean(events.error)} tone="accent" detail="Rolling 24 hours" />
+        <StatCard icon="◎" label="Grant rate" value={grantRate === null ? (recentEvents?.length === 0 ? "—" : null) : `${grantRate}%`} denied={events.denied || Boolean(events.error)} tone="granted" detail="Successful access decisions" />
         <StatCard
+          icon="◉"
           label="Biometric-ready users"
           value={profileList === null ? null : `${credentialReady}/${profileList.length}`}
           denied={profiles.denied || Boolean(profiles.error)}
           tone="accent"
-          detail={profileList === null ? "" : `${missingCredentials} missing a face or fingerprint`}
+          detail={profileList === null ? "Credential coverage" : `${missingCredentials} need attention`}
         />
-        <StatCard label="Open security alerts" value={openSecurity} denied={security.denied || Boolean(security.error)} tone="warn" />
+        <StatCard icon="!" label="Open alerts" value={openSecurity} denied={security.denied || Boolean(security.error)} tone="warn" detail="Require review" />
       </div>
       <ErrorAlert message={[labs.error, permissions.error, events.error, security.error, profiles.error].filter(Boolean).join(" ")} />
+
+      <Panel
+        title="Activity rings"
+        sub="The health of your access environment at a glance."
+        className="activity-rings-panel"
+      >
+        <div className="activity-rings">
+          <ActivityRing
+            label="Access granted"
+            value={grantRate}
+            detail={recentEvents === null
+              ? events.denied || events.error ? "Activity unavailable" : "Loading access activity…"
+              : recentEvents.length
+                ? `${grantedCount} of ${recentEvents.length} attempts · last 24h`
+                : "No access attempts · last 24h"}
+            tone="granted"
+          />
+          <ActivityRing
+            label="Credential coverage"
+            value={credentialCoverage}
+            detail={profileList === null
+              ? profiles.denied || profiles.error ? "Profile data unavailable" : "Loading profiles…"
+              : profileList.length
+                ? `${credentialReady} of ${profileList.length} profiles complete`
+                : "No biometric profiles yet"}
+            tone="accent"
+          />
+          <ActivityRing
+            label="Alerts resolved"
+            value={securityResolutionRate}
+            detail={securityEventList === null
+              ? security.denied || security.error ? "Alert data unavailable" : "Loading security alerts…"
+              : securityEventList.length
+                ? `${resolvedSecurityCount} resolved · ${openSecurity} open`
+                : "No security alerts recorded"}
+            tone={openSecurity === null ? "accent" : openSecurity > 0 ? "warn" : "granted"}
+          />
+        </div>
+      </Panel>
 
       <Panel
         title="Operational insights"
@@ -273,6 +337,7 @@ export default function Dashboard() {
           </div>
         </Panel>
       </div>
+      <DoorStatusPanel />
       {user?.role !== ROLES.LABORATORY_USER && (
         <div className="hardware-readiness">
           <div className="hardware-readiness-head">
@@ -282,10 +347,11 @@ export default function Dashboard() {
           <div className="hardware-state-grid">
             <HardwareState label="Face recognition" state="Configured" tone="good" detail="OpenCV service" />
             <HardwareState label="Fingerprint reader" state="Offline" tone="warning" detail="No sensor connected" />
-            <HardwareState label="Door controller" state="Not connected" tone="warning" detail="No physical release" />
+            <HardwareState label="Door monitoring" state="Live monitor" tone="good" detail="Sensor status shown above" />
           </div>
         </div>
       )}
+      </div>
       {userModalOpen && <CreateUserModal onClose={() => setUserModalOpen(false)} />}
     </>
   );
@@ -402,12 +468,49 @@ function HardwareState({ label, state, tone, detail }) {
   );
 }
 
-function StatCard({ label, value, denied, tone, detail }) {
+function StatCard({ icon, label, value, denied, tone, detail }) {
   return (
-    <div className="stat-card">
-      <div className="stat-label">{label}</div>
-      <div className={`stat-value ${tone}`}>{denied ? "—" : value === null ? "···" : value}</div>
-      {detail && <div className="stat-detail">{detail}</div>}
+    <div className={`stat-card dashboard-stat-card stat-${tone}`}>
+      <div className="dashboard-stat-top">
+        <span className="stat-label">{label}</span>
+        <span className="stat-icon" aria-hidden="true">{icon}</span>
+      </div>
+      <div className="dashboard-stat-bottom">
+        <div className={`stat-value ${tone}`}>{denied ? "—" : value === null ? "···" : value}</div>
+        {detail && <div className="stat-detail">{detail}</div>}
+      </div>
+    </div>
+  );
+}
+
+function ActivityRing({ label, value, detail, tone }) {
+  const circumference = 2 * Math.PI * 40;
+  const progress = value === null ? 0 : Math.min(100, Math.max(0, value));
+
+  return (
+    <div className="activity-ring-card">
+      <div
+        className={`activity-ring-visual activity-ring-${tone}`}
+        role="img"
+        aria-label={`${label}: ${value === null ? "not available" : `${value}%`}`}
+      >
+        <svg viewBox="0 0 100 100" aria-hidden="true">
+          <circle className="activity-ring-track" cx="50" cy="50" r="40" />
+          <circle
+            className="activity-ring-progress"
+            cx="50"
+            cy="50"
+            r="40"
+            strokeDasharray={circumference}
+            strokeDashoffset={circumference * (1 - progress / 100)}
+          />
+        </svg>
+        <span>{value === null ? "—" : `${value}%`}</span>
+      </div>
+      <div className="activity-ring-copy">
+        <strong>{label}</strong>
+        <small>{detail}</small>
+      </div>
     </div>
   );
 }

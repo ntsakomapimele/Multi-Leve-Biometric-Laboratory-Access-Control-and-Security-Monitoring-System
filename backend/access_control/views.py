@@ -93,6 +93,74 @@ class SecurityEventViewSet(viewsets.ModelViewSet):
     serializer_class = SecurityEventSerializer
     permission_classes = [CanViewSecurityEvents]
 
+
+class DoorStatusView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        bridge_url = getattr(settings, "SENTRYLAB_BRIDGE_URL", "").rstrip("/")
+        bridge_key = getattr(settings, "BRIDGE_KEY", "")
+        if not bridge_key:
+            return Response(
+                {"error": "Bridge configuration is missing."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
+        outgoing = Request(
+            f"{bridge_url}/door/status",
+            headers={
+                "X-Device-Key": bridge_key,
+                "Accept": "application/json",
+            },
+            method="GET",
+        )
+
+        try:
+            with urlopen(outgoing, timeout=5) as response:
+                payload = response.read(4097)
+
+            if len(payload) > 4096:
+                return Response(
+                    {"error": "Door status response is too large."},
+                    status=status.HTTP_502_BAD_GATEWAY,
+                )
+
+            data = json.loads(payload)
+            if not isinstance(data, dict):
+                return Response(
+                    {"error": "Invalid door sensor response."},
+                    status=status.HTTP_502_BAD_GATEWAY,
+                )
+
+            door_status = data.get("door_status")
+            sensor_reading = data.get("sensor_reading")
+            if (
+                door_status not in ("OPEN", "CLOSED")
+                or isinstance(sensor_reading, bool)
+                or not isinstance(sensor_reading, int)
+                or sensor_reading not in (0, 1)
+            ):
+                return Response(
+                    {"error": "Invalid door sensor response."},
+                    status=status.HTTP_502_BAD_GATEWAY,
+                )
+
+            return Response({
+                "door_status": door_status,
+                "sensor_reading": sensor_reading,
+                "device_online": True,
+                "last_updated": timezone.now().isoformat(),
+            })
+        except (HTTPError, URLError, TimeoutError, OSError, ValueError):
+            return Response(
+                {
+                    "error": "Door controller is unavailable.",
+                    "device_online": False,
+                },
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+
 class FingerprintScanView(APIView):
     permission_classes = [AllowAny]
 

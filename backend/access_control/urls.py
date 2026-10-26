@@ -13,6 +13,7 @@ from .views import (
     ReaderTestView,
     FaceEnrollmentView,
     FingerprintEnrollmentView,
+    DoorStatusView,
 )
 
 
@@ -48,6 +49,11 @@ router.register(
     UserViewSet,
 )
 urlpatterns = [
+    path(
+        "door/status/",
+        DoorStatusView.as_view(),
+        name="door-status",
+    ),
     path("authenticate/", AuthenticateView.as_view()),
     path("fingerprint-scan/", FingerprintScanView.as_view()),
     path("reader-test/", ReaderTestView.as_view()),

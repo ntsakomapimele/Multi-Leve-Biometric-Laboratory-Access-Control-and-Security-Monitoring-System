@@ -122,7 +122,7 @@ export default function Layout({ children }) {
             <div className="session-avatar">{initials}</div>
             <div className="session-meta">
               <strong>{user?.username}</strong>
-              <span>AUTHENTICATED</span>
+              <span className="session-role">{user?.role || "AUTHENTICATED"}</span>
             </div>
           </div>
           <button className="logout-btn" onClick={logout}>

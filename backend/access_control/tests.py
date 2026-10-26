@@ -1,10 +1,12 @@
 from datetime import timedelta
+import json
 from unittest.mock import patch
 
 from django.contrib.auth.models import Group, User
 from django.test import TestCase
 from django.utils import timezone
 import numpy as np
+from urllib.error import URLError
 from rest_framework.test import APIClient
 
 from .models import (
@@ -275,3 +277,75 @@ class UserAndPermissionApiTests(TestCase):
 		self.assertEqual(response.data["user"], "operator")
 
 # Create your tests here.
+
+
+class DoorStatusApiTests(TestCase):
+	def setUp(self):
+		self.client = APIClient()
+		self.user = User.objects.create_user(username="security")
+		self.client.force_authenticate(self.user)
+
+	def test_requires_authentication(self):
+		response = APIClient().get("/api/door/status/")
+		self.assertEqual(response.status_code, 401)
+
+	def test_returns_valid_door_reading_from_configured_bridge(self):
+		payload = {"door_status": "OPEN", "sensor_reading": 1}
+		with self.settings(
+			SENTRYLAB_BRIDGE_URL="http://bridge:8765/",
+			BRIDGE_KEY="server-secret",
+		):
+			with patch("access_control.views.urlopen") as urlopen:
+				urlopen.return_value.__enter__.return_value.read.return_value = (
+					json.dumps(payload).encode()
+				)
+				response = self.client.get("/api/door/status/")
+
+		self.assertEqual(response.status_code, 200)
+		self.assertEqual(response.data["door_status"], "OPEN")
+		self.assertEqual(response.data["sensor_reading"], 1)
+		self.assertTrue(response.data["device_online"])
+		self.assertTrue(response.data["last_updated"])
+		outgoing = urlopen.call_args.args[0]
+		self.assertEqual(outgoing.full_url, "http://bridge:8765/door/status")
+		self.assertEqual(outgoing.get_header("X-device-key"), "server-secret")
+		self.assertEqual(urlopen.call_args.kwargs["timeout"], 5)
+
+	def test_returns_service_unavailable_when_bridge_key_is_missing(self):
+		with self.settings(SENTRYLAB_BRIDGE_URL="http://bridge:8765", BRIDGE_KEY=""):
+			with patch("access_control.views.urlopen") as urlopen:
+				response = self.client.get("/api/door/status/")
+
+		self.assertEqual(response.status_code, 503)
+		urlopen.assert_not_called()
+
+	def test_rejects_invalid_sensor_data(self):
+		for payload in (
+			{"door_status": "JAMMED", "sensor_reading": 1},
+			{"door_status": "OPEN", "sensor_reading": True},
+			{"door_status": "CLOSED", "sensor_reading": 2},
+		):
+			with self.subTest(payload=payload):
+				with self.settings(
+					SENTRYLAB_BRIDGE_URL="http://bridge:8765",
+					BRIDGE_KEY="server-secret",
+				):
+					with patch("access_control.views.urlopen") as urlopen:
+						urlopen.return_value.__enter__.return_value.read.return_value = (
+							json.dumps(payload).encode()
+						)
+						response = self.client.get("/api/door/status/")
+
+				self.assertEqual(response.status_code, 502)
+				self.assertEqual(response.data["error"], "Invalid door sensor response.")
+
+	def test_returns_gateway_error_when_bridge_is_unavailable(self):
+		with self.settings(
+			SENTRYLAB_BRIDGE_URL="http://bridge:8765",
+			BRIDGE_KEY="server-secret",
+		):
+			with patch("access_control.views.urlopen", side_effect=URLError("offline")):
+				response = self.client.get("/api/door/status/")
+
+		self.assertEqual(response.status_code, 502)
+		self.assertFalse(response.data["device_online"])

@@ -25,6 +25,11 @@ ESP32_DEVICE_URL = os.environ.get(
 # )
 
 ESP32_DEVICE_KEY = os.environ.get("ESP32_DEVICE_KEY", "")
+SENTRYLAB_BRIDGE_URL = os.environ.get(
+    "SENTRYLAB_BRIDGE_URL",
+    "http://127.0.0.1:8765",
+).rstrip("/")
+BRIDGE_KEY = os.environ.get("BRIDGE_KEY", "")
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
