@@ -144,6 +144,60 @@ class UserAndPermissionApiTests(TestCase):
 		self.assertTrue(created.groups.filter(name="Laboratory User").exists())
 		self.assertTrue(BiometricProfile.objects.filter(user=created).exists())
 
+	def test_security_officer_can_view_but_not_modify_biometric_profiles(self):
+		officer = User.objects.create_user(username="officer")
+		officer.groups.create(name="Security Officer")
+		profile = BiometricProfile.objects.create(user=self.operator)
+		self.client.force_authenticate(officer)
+
+		self.assertEqual(self.client.get("/api/biometric-profiles/").status_code, 200)
+		self.assertEqual(
+			self.client.post(
+				"/api/biometric-profiles/",
+				{"user": "operator", "fingerprint_id": 17},
+				format="json",
+			).status_code,
+			403,
+		)
+		self.assertEqual(
+			self.client.patch(
+				f"/api/biometric-profiles/{profile.pk}/",
+				{"fingerprint_id": 17},
+				format="json",
+			).status_code,
+			403,
+		)
+		self.assertEqual(
+			self.client.delete(f"/api/biometric-profiles/{profile.pk}/").status_code,
+			403,
+		)
+		self.assertEqual(
+			self.client.post(
+				"/api/users/",
+				{"username": "new-user", "role": "Laboratory User"},
+				format="json",
+			).status_code,
+			403,
+		)
+		self.assertEqual(
+			self.client.post(
+				"/api/face-enroll/",
+				{"username": "operator", "face_image": "captured-frame"},
+				format="json",
+			).status_code,
+			403,
+		)
+		self.assertEqual(
+			self.client.post(
+				"/api/fingerprint-enrollment/start/",
+				{"user_id": self.operator.pk},
+				format="json",
+			).status_code,
+			403,
+		)
+		self.assertTrue(BiometricProfile.objects.filter(pk=profile.pk).exists())
+		self.assertFalse(User.objects.filter(username="new-user").exists())
+
 	def test_user_creation_reuses_existing_role_group(self):
 		role_group = Group.objects.create(name="Laboratory User")
 		self.client.force_authenticate(self.admin)

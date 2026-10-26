@@ -19,6 +19,7 @@ const EMPTY_FORM = { user: "", fingerprint_id: "" };
 
 export default function BiometricProfiles() {
   const { user: currentUser } = useAuth();
+  const isAdministrator = currentUser?.role === ROLES.ADMINISTRATOR;
   const { items, loading, error, forbidden, create, update, remove, reload } = useResourceList("/biometric-profiles/");
   const [modal, setModal] = useState(null);
   const [formError, setFormError] = useState("");
@@ -26,6 +27,11 @@ export default function BiometricProfiles() {
   const [deletingId, setDeletingId] = useState(null);
   const [enrollUser, setEnrollUser] = useState(null);
   const [fingerprintUser, setFingerprintUser] = useState(null);
+  const faceEnrolledCount = items.filter((profile) => profile.face_registered).length;
+  const fingerprintEnrolledCount = items.filter((profile) => profile.fingerprint_id != null).length;
+  const readyCount = items.filter(
+    (profile) => profile.face_registered && profile.fingerprint_id != null
+  ).length;
 
   function openCreate() {
     setFormError("");
@@ -107,16 +113,31 @@ export default function BiometricProfiles() {
       <PageHead
         eyebrow="Access Control"
         title="Biometric Profiles"
-        sub="Which enrolled credentials (fingerprint, face) are on file for each Django user account. Manage user accounts themselves in /admin/."
-        action={
+        sub={isAdministrator
+          ? "Credential coverage and enrollment status for each user. Only administrators can enroll or change biometric records."
+          : "Credential coverage and enrollment status for each user. This view is read-only for security staff."}
+        action={isAdministrator && (
           <button className="btn btn-primary" onClick={openCreate}>
             + Enroll profile
           </button>
-        }
+        )}
       />
+
+      <div className="stat-grid">
+        <ProfileStat label="Profiles" value={items.length} loading={loading} />
+        <ProfileStat label="Face enrolled" value={faceEnrolledCount} loading={loading} />
+        <ProfileStat label="Fingerprint enrolled" value={fingerprintEnrolledCount} loading={loading} />
+        <ProfileStat label="Complete credentials" value={`${readyCount}/${items.length}`} loading={loading} />
+      </div>
 
       <Panel>
         <ErrorAlert message={error} />
+        {!isAdministrator && (
+          <div className="read-only-note">
+            <span className="insight-label">Read-only access</span>
+            <span>Contact an administrator to register users or enroll and update biometric credentials.</span>
+          </div>
+        )}
         {loading && <LoadingRow />}
         {!loading && items.length === 0 && !error && (
           <EmptyState glyph="◉" title="No biometric profiles enrolled yet." />
@@ -130,7 +151,7 @@ export default function BiometricProfiles() {
                   <th>Fingerprint ID</th>
                   <th>Face Registered</th>
                   <th>Created</th>
-                  <th></th>
+                  {isAdministrator && <th></th>}
                 </tr>
               </thead>
               <tbody>
@@ -142,27 +163,23 @@ export default function BiometricProfiles() {
                       <BoolBadge value={p.face_registered} />
                     </td>
                     <td className="mono dim">{p.created_at ? new Date(p.created_at).toLocaleDateString() : "—"}</td>
-                    <td>
+                    {isAdministrator && <td>
                       <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
                         <button className="btn btn-ghost btn-sm" onClick={() => openEdit(p)}>
                           Edit
                         </button>
-                        {currentUser?.role === ROLES.ADMINISTRATOR && (
-                          <>
-                            <button className="btn btn-ghost btn-sm" onClick={() => openEnrollment(p)}>
-                              {p.face_registered ? "Retake face" : "Enroll face"}
-                            </button>
-                            {p.fingerprint_id == null ? (
-                              <button
-                                className="btn btn-primary btn-sm"
-                                onClick={() => openFingerprintEnrollment(p)}
-                              >
-                                Enroll fingerprint
-                              </button>
-                            ) : (
-                              <span className="dim">Fingerprint enrolled</span>
-                            )}
-                          </>
+                        <button className="btn btn-ghost btn-sm" onClick={() => openEnrollment(p)}>
+                          {p.face_registered ? "Retake face" : "Enroll face"}
+                        </button>
+                        {p.fingerprint_id == null ? (
+                          <button
+                            className="btn btn-primary btn-sm"
+                            onClick={() => openFingerprintEnrollment(p)}
+                          >
+                            Enroll fingerprint
+                          </button>
+                        ) : (
+                          <span className="dim">Fingerprint enrolled</span>
                         )}
                         <button
                           className="btn btn-ghost btn-sm"
@@ -173,7 +190,7 @@ export default function BiometricProfiles() {
                           {deletingId === p.id ? "Removing…" : "Remove"}
                         </button>
                       </div>
-                    </td>
+                    </td>}
                   </tr>
                 ))}
               </tbody>
@@ -246,6 +263,15 @@ export default function BiometricProfiles() {
         />
       )}
     </>
+  );
+}
+
+function ProfileStat({ label, value, loading }) {
+  return (
+    <div className="stat-card">
+      <div className="stat-label">{label}</div>
+      <div className="stat-value accent">{loading ? "···" : value}</div>
+    </div>
   );
 }
 

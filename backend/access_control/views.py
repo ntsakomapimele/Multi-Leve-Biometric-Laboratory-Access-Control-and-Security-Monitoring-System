@@ -32,6 +32,7 @@ from .models import (
     SecurityEvent,
 )
 from .permissions import (
+    CanManageBiometricProfiles,
     CanManageLaboratories,
     CanViewSecurityEvents,
     IsAdministrator,
@@ -74,7 +75,7 @@ class LaboratoryViewSet(viewsets.ModelViewSet):
 class BiometricProfileViewSet(viewsets.ModelViewSet):
     queryset = BiometricProfile.objects.all()
     serializer_class = BiometricProfileSerializer
-    permission_classes = [IsSecurityOfficer]
+    permission_classes = [CanManageBiometricProfiles]
 
 class AccessPermissionViewSet(viewsets.ModelViewSet):
     queryset = AccessPermission.objects.all()

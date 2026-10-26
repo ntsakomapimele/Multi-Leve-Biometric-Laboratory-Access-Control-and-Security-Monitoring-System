@@ -11,11 +11,13 @@ import { PageHead, Panel, ResultBadge, SeverityBadge, LoadingRow, EmptyState, Er
 function useCount(endpoint) {
   const [count, setCount] = useState(null);
   const [denied, setDenied] = useState(false);
+  const [error, setError] = useState("");
 
   useEffect(() => {
     if (!endpoint) {
       setCount(null);
       setDenied(false);
+      setError("");
       return undefined;
     }
 
@@ -24,20 +26,26 @@ function useCount(endpoint) {
       .get(endpoint)
       .then((res) => {
         if (!active) return;
+        setDenied(false);
+        setError("");
         const data = res.data;
         setCount(Array.isArray(data) ? data.length : data.count ?? data.results?.length ?? 0);
       })
       .catch((err) => {
         if (!active) return;
-        if (err.response?.status === 403) setDenied(true);
-        else setCount(0);
+        if (err.response?.status === 403) {
+          setDenied(true);
+        } else {
+          setCount(null);
+          setError(extractErrorMessage(err, "Couldn't load dashboard statistics."));
+        }
       });
     return () => {
       active = false;
     };
   }, [endpoint]);
 
-  return { count, denied };
+  return { count, denied, error };
 }
 
 export default function Dashboard() {
@@ -48,6 +56,7 @@ export default function Dashboard() {
   const permissions = useCount("/access-permissions/");
   const events = useResourceForFeed(isLaboratoryUser ? null : "/authentication-events/");
   const security = useResourceForFeed(isLaboratoryUser ? null : "/security-events/");
+  const profiles = useResourceForFeed(isLaboratoryUser ? null : "/biometric-profiles/");
 
   if (isLaboratoryUser) {
     return (
@@ -58,9 +67,10 @@ export default function Dashboard() {
           sub="Review laboratories and manage the access permissions assigned to you."
         />
         <div className="stat-grid">
-          <StatCard label="Available Laboratories" value={labs.count} denied={labs.denied} tone="accent" />
-          <StatCard label="Active Permissions" value={permissions.count} denied={permissions.denied} tone="accent" />
+          <StatCard label="Available Laboratories" value={labs.count} denied={labs.denied || Boolean(labs.error)} tone="accent" />
+          <StatCard label="Active Permissions" value={permissions.count} denied={permissions.denied || Boolean(permissions.error)} tone="accent" />
         </div>
+          <ErrorAlert message={[labs.error, permissions.error].filter(Boolean).join(" ")} />
         <Panel title="Your access workspace" sub="Use the navigation to review laboratory access and run a biometric check.">
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
             <Link className="btn btn-sm" to="/laboratories">Browse laboratories →</Link>
@@ -72,14 +82,38 @@ export default function Dashboard() {
     );
   }
 
-  const grantedCount = Array.isArray(events.data)
-    ? events.data.filter((e) => e.result === "GRANTED").length
+  const recentEvents = Array.isArray(events.data)
+    ? events.data.filter((event) => {
+        const timestamp = new Date(event.timestamp).getTime();
+        return Number.isFinite(timestamp) && timestamp >= Date.now() - 24 * 60 * 60 * 1000;
+      })
     : null;
-  const deniedCount = Array.isArray(events.data)
-    ? events.data.filter((e) => e.result === "DENIED").length
-    : null;
+  const grantedCount = recentEvents?.filter((event) => event.result === "GRANTED").length ?? null;
+  const deniedCount = recentEvents?.filter((event) => event.result === "DENIED").length ?? null;
   const openSecurity = Array.isArray(security.data)
-    ? security.data.filter((e) => !e.resolved).length
+    ? security.data.filter((event) => !event.resolved).length
+    : null;
+  const highSeverityOpen = Array.isArray(security.data)
+    ? security.data.filter((event) => !event.resolved && event.severity === "HIGH").length
+    : null;
+  const profileList = Array.isArray(profiles.data) ? profiles.data : null;
+  const credentialReady = profileList?.filter(
+    (profile) => profile.face_registered && profile.fingerprint_id != null
+  ).length ?? null;
+  const missingCredentials = profileList
+    ? profileList.length - credentialReady
+    : null;
+  const grantRate = recentEvents?.length
+    ? Math.round((grantedCount / recentEvents.length) * 100)
+    : null;
+  const topDenial = recentEvents
+    ?.filter((event) => event.result === "DENIED" && event.denial_reason)
+    .reduce((counts, event) => {
+      counts[event.denial_reason] = (counts[event.denial_reason] || 0) + 1;
+      return counts;
+    }, {});
+  const mostCommonDenial = topDenial
+    ? Object.entries(topDenial).sort((a, b) => b[1] - a[1])[0]
     : null;
 
   return (
@@ -87,7 +121,9 @@ export default function Dashboard() {
       <PageHead
         eyebrow={user?.role === ROLES.SECURITY_OFFICER ? "Monitoring / Overview" : "Console / Overview"}
         title={user?.role === ROLES.SECURITY_OFFICER ? "Security status" : "System status"}
-        sub={user?.role === ROLES.SECURITY_OFFICER ? "Live view of authentication activity and unresolved security alerts." : "Live snapshot of laboratories, credentials, and recent access activity."}
+        sub={user?.role === ROLES.SECURITY_OFFICER
+          ? "Monitor access trends, credential readiness, and unresolved alerts. User registration and biometric enrollment are administrator-only."
+          : "Live snapshot of laboratories, credentials, and recent access activity."}
         action={user?.role === ROLES.ADMINISTRATOR && (
           <button className="btn btn-primary" onClick={() => setUserModalOpen(true)}>
             + Add user
@@ -96,12 +132,59 @@ export default function Dashboard() {
       />
 
       <div className="stat-grid">
-        <StatCard label="Laboratories" value={labs.count} denied={labs.denied} tone="accent" />
-        {user?.role !== ROLES.SECURITY_OFFICER && <StatCard label="Active Permissions" value={permissions.count} denied={permissions.denied} tone="accent" />}
-        <StatCard label="Recent — Granted" value={grantedCount} denied={events.denied} tone="granted" />
-        <StatCard label="Recent — Denied" value={deniedCount} denied={events.denied} tone="denied" />
-        <StatCard label="Unresolved Security Events" value={openSecurity} denied={security.denied} tone="warn" />
+        <StatCard label="Laboratories" value={labs.count} denied={labs.denied || Boolean(labs.error)} tone="accent" />
+        {user?.role === ROLES.ADMINISTRATOR && <StatCard label="Permission records" value={permissions.count} denied={permissions.denied || Boolean(permissions.error)} tone="accent" />}
+        <StatCard label="Access attempts · 24h" value={recentEvents?.length ?? null} denied={events.denied || Boolean(events.error)} tone="accent" />
+        <StatCard label="Grant rate · 24h" value={grantRate === null ? (recentEvents?.length === 0 ? "—" : null) : `${grantRate}%`} denied={events.denied || Boolean(events.error)} tone="granted" />
+        <StatCard
+          label="Biometric-ready users"
+          value={profileList === null ? null : `${credentialReady}/${profileList.length}`}
+          denied={profiles.denied || Boolean(profiles.error)}
+          tone="accent"
+          detail={profileList === null ? "" : `${missingCredentials} missing a face or fingerprint`}
+        />
+        <StatCard label="Open security alerts" value={openSecurity} denied={security.denied || Boolean(security.error)} tone="warn" />
       </div>
+      <ErrorAlert message={[labs.error, permissions.error, events.error, security.error, profiles.error].filter(Boolean).join(" ")} />
+
+      <Panel
+        title="Operational insights"
+        sub="A rolling 24-hour view of access decisions, credential readiness, and active risk."
+        className="insights-panel"
+      >
+        <div className="insight-grid">
+          <div className="insight-item">
+            <span className="insight-label">Access decisions</span>
+            <strong>{recentEvents === null ? "···" : `${grantedCount} granted · ${deniedCount} denied`}</strong>
+            <div className="insight-bar" aria-label={`${grantedCount ?? 0} granted and ${deniedCount ?? 0} denied`}>
+              <span className="insight-bar-granted" style={{ width: `${grantRate ?? 0}%` }} />
+              <span className="insight-bar-denied" style={{ width: `${recentEvents?.length ? 100 - grantRate : 0}%` }} />
+            </div>
+          </div>
+          <div className="insight-item">
+            <span className="insight-label">Most common denial</span>
+            <strong>{events.loading ? "Loading activity…" : mostCommonDenial?.[0] || "No denials in the last 24 hours"}</strong>
+            {mostCommonDenial && <small>{mostCommonDenial[1]} occurrence{mostCommonDenial[1] === 1 ? "" : "s"}</small>}
+          </div>
+          <div className="insight-item">
+            <span className="insight-label">Credential gaps</span>
+            <strong>{profiles.loading ? "Loading profiles…" : missingCredentials === null ? "Unavailable" : `${missingCredentials} profile${missingCredentials === 1 ? "" : "s"} need attention`}</strong>
+            <small>{security.loading ? "Checking alert queue…" : highSeverityOpen === null ? "Alert data unavailable" : `${highSeverityOpen} high-severity open alert${highSeverityOpen === 1 ? "" : "s"}`}</small>
+          </div>
+        </div>
+        {user?.role === ROLES.ADMINISTRATOR && (
+          <div className="insight-actions">
+            <Link className="btn btn-sm" to="/biometric-profiles">Review credentials →</Link>
+            <Link className="btn btn-sm" to="/security-events">Triage alerts →</Link>
+          </div>
+        )}
+        {user?.role === ROLES.SECURITY_OFFICER && (
+          <div className="insight-actions">
+            <Link className="btn btn-sm" to="/authentication-events">Investigate access log →</Link>
+            <Link className="btn btn-sm" to="/security-events">Triage alerts →</Link>
+          </div>
+        )}
+      </Panel>
 
       <div style={{ display: "grid", gridTemplateColumns: "1.3fr 1fr", gap: 18 }} className="dash-grid">
         <Panel title="Recent authentication attempts" sub="Latest results from the access reader.">
@@ -266,12 +349,14 @@ function useResourceForFeed(endpoint) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [denied, setDenied] = useState(false);
+  const [error, setError] = useState("");
 
   useEffect(() => {
     if (!endpoint) {
       setData([]);
       setLoading(false);
       setDenied(false);
+      setError("");
       return undefined;
     }
 
@@ -280,14 +365,21 @@ function useResourceForFeed(endpoint) {
       .get(endpoint)
       .then((res) => {
         if (!active) return;
+        setError("");
+        setDenied(false);
         const payload = res.data;
         const list = Array.isArray(payload) ? payload : payload.results || [];
-        setData([...list].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)));
+        setData([...list].sort((a, b) =>
+          new Date(b.timestamp || b.created_at) - new Date(a.timestamp || a.created_at)
+        ));
       })
       .catch((err) => {
         if (!active) return;
-        if (err.response?.status === 403) setDenied(true);
-        else setData([]);
+        if (err.response?.status === 403) {
+          setDenied(true);
+        } else {
+          setError(extractErrorMessage(err, "Couldn't load dashboard activity."));
+        }
       })
       .finally(() => active && setLoading(false));
     refresh();
@@ -298,7 +390,7 @@ function useResourceForFeed(endpoint) {
     };
   }, [endpoint]);
 
-  return { data, loading, denied };
+  return { data, loading, denied, error };
 }
 
 function HardwareState({ label, state, tone, detail }) {
@@ -310,11 +402,12 @@ function HardwareState({ label, state, tone, detail }) {
   );
 }
 
-function StatCard({ label, value, denied, tone }) {
+function StatCard({ label, value, denied, tone, detail }) {
   return (
     <div className="stat-card">
       <div className="stat-label">{label}</div>
       <div className={`stat-value ${tone}`}>{denied ? "—" : value === null ? "···" : value}</div>
+      {detail && <div className="stat-detail">{detail}</div>}
     </div>
   );
 }
