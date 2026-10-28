@@ -154,6 +154,12 @@ class SecurityEvent(models.Model):
         max_length=10,
         choices=SEVERITY_CHOICES,
     )
+    source_event_id = models.UUIDField(
+        null=True,
+        blank=True,
+        editable=False,
+        unique=True,
+    )
     resolved = models.BooleanField(default=False)
     timestamp = models.DateTimeField(auto_now_add=True)
 

@@ -307,6 +307,7 @@ class DoorStatusApiTests(TestCase):
 		self.assertEqual(response.data["door_status"], "OPEN")
 		self.assertEqual(response.data["sensor_reading"], 1)
 		self.assertTrue(response.data["device_online"])
+		self.assertFalse(response.data["stale"])
 		self.assertTrue(response.data["last_updated"])
 		outgoing = urlopen.call_args.args[0]
 		self.assertEqual(outgoing.full_url, "http://bridge:8765/door/status")
@@ -340,6 +341,8 @@ class DoorStatusApiTests(TestCase):
 
 				self.assertEqual(response.status_code, 502)
 				self.assertEqual(response.data["error"], "Invalid door sensor response.")
+				self.assertIsNone(response.data["door_status"])
+				self.assertTrue(response.data["stale"])
 
 	def test_returns_gateway_error_when_bridge_is_unavailable(self):
 		with self.settings(
@@ -350,7 +353,9 @@ class DoorStatusApiTests(TestCase):
 				response = self.client.get("/api/door/status/")
 
 		self.assertEqual(response.status_code, 502)
+		self.assertIsNone(response.data["door_status"])
 		self.assertFalse(response.data["device_online"])
+		self.assertTrue(response.data["stale"])
 
 
 class DoorStateWebhookTests(TestCase):
@@ -385,30 +390,69 @@ class DoorStateWebhookTests(TestCase):
 		self.assertEqual(SecurityEvent.objects.count(), 0)
 
 	def test_door_left_open_notification_creates_security_event(self):
+		event_id = "06d4d7a2-65c7-4a2d-b71c-9a826451a0cc"
 		with patch.dict(os.environ, {
 			"DOOR_EVENT_WEBHOOK_KEY": "webhook-secret",
 			"SENTRYLAB_LABORATORY_ID": str(self.laboratory.pk),
 		}):
-			response = self.post_door_state({"event_type": "DOOR_LEFT_OPEN"})
+			response = self.post_door_state({
+				"event_type": "DOOR_LEFT_OPEN",
+				"event_id": event_id,
+			})
 
 		self.assertEqual(response.status_code, 201)
 		self.assertTrue(response.json()["security_event_created"])
+		self.assertEqual(response.json()["event_id"], event_id)
 		event = SecurityEvent.objects.get()
 		self.assertEqual(event.laboratory, self.laboratory)
 		self.assertEqual(event.event_type, "DOOR_LEFT_OPEN")
 		self.assertEqual(event.severity, "HIGH")
+		self.assertEqual(str(event.source_event_id), event_id)
 
 	def test_each_accepted_notification_creates_one_event(self):
+		payload = {
+			"event_type": "DOOR_LEFT_OPEN",
+			"event_id": "06d4d7a2-65c7-4a2d-b71c-9a826451a0cc",
+		}
 		with patch.dict(os.environ, {
 			"DOOR_EVENT_WEBHOOK_KEY": "webhook-secret",
 			"SENTRYLAB_LABORATORY_ID": str(self.laboratory.pk),
 		}):
-			first_response = self.post_door_state({"event_type": "DOOR_LEFT_OPEN"})
-			second_response = self.post_door_state({"event_type": "DOOR_LEFT_OPEN"})
+			first_response = self.post_door_state(payload)
+			second_response = self.post_door_state(payload)
 
 		self.assertEqual(first_response.status_code, 201)
-		self.assertEqual(second_response.status_code, 201)
-		self.assertEqual(SecurityEvent.objects.count(), 2)
+		self.assertEqual(second_response.status_code, 200)
+		self.assertTrue(first_response.json()["security_event_created"])
+		self.assertFalse(second_response.json()["security_event_created"])
+		self.assertEqual(SecurityEvent.objects.count(), 1)
+
+	def test_event_identifier_cannot_be_reused_for_another_laboratory(self):
+		other_laboratory = Laboratory.objects.create(
+			name="Chemistry Lab",
+			location="Building B",
+		)
+		event_id = "06d4d7a2-65c7-4a2d-b71c-9a826451a0cc"
+		with patch.dict(os.environ, {
+			"DOOR_EVENT_WEBHOOK_KEY": "webhook-secret",
+			"SENTRYLAB_LABORATORY_ID": str(self.laboratory.pk),
+		}):
+			first_response = self.post_door_state({
+				"event_type": "DOOR_LEFT_OPEN",
+				"event_id": event_id,
+			})
+		with patch.dict(os.environ, {
+			"DOOR_EVENT_WEBHOOK_KEY": "webhook-secret",
+			"SENTRYLAB_LABORATORY_ID": str(other_laboratory.pk),
+		}):
+			reuse_response = self.post_door_state({
+				"event_type": "DOOR_LEFT_OPEN",
+				"event_id": event_id,
+			})
+
+		self.assertEqual(first_response.status_code, 201)
+		self.assertEqual(reuse_response.status_code, 409)
+		self.assertEqual(SecurityEvent.objects.count(), 1)
 
 	def test_unsupported_event_type_is_rejected(self):
 		with patch.dict(os.environ, {"DOOR_EVENT_WEBHOOK_KEY": "webhook-secret"}):
@@ -419,7 +463,12 @@ class DoorStateWebhookTests(TestCase):
 
 	def test_invalid_payloads_are_rejected(self):
 		with patch.dict(os.environ, {"DOOR_EVENT_WEBHOOK_KEY": "webhook-secret"}):
-			for body in ("not-json", "[]", '{"event_type":"DOOR_CLOSED"}'):
+			for body in (
+				"not-json",
+				"[]",
+				'{"event_type":"DOOR_CLOSED"}',
+				'{"event_type":"DOOR_LEFT_OPEN","event_id":"not-a-uuid"}',
+			):
 				with self.subTest(body=body):
 					response = self.client.post(
 						self.url,

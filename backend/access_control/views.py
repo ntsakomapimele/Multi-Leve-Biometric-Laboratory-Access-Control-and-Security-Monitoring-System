@@ -12,6 +12,7 @@ import json
 from datetime import timedelta
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
+from uuid import UUID
 from django.conf import settings
 from django.db import transaction
 from django.core.cache import cache
@@ -103,7 +104,13 @@ class DoorStatusView(APIView):
         bridge_key = getattr(settings, "BRIDGE_KEY", "")
         if not bridge_key:
             return Response(
-                {"error": "Bridge configuration is missing."},
+                {
+                    "error": "Bridge configuration is missing.",
+                    "door_status": None,
+                    "sensor_reading": None,
+                    "device_online": False,
+                    "stale": True,
+                },
                 status=status.HTTP_503_SERVICE_UNAVAILABLE,
             )
 
@@ -122,14 +129,26 @@ class DoorStatusView(APIView):
 
             if len(payload) > 4096:
                 return Response(
-                    {"error": "Door status response is too large."},
+                    {
+                        "error": "Door status response is too large.",
+                        "door_status": None,
+                        "sensor_reading": None,
+                        "device_online": False,
+                        "stale": True,
+                    },
                     status=status.HTTP_502_BAD_GATEWAY,
                 )
 
             data = json.loads(payload)
             if not isinstance(data, dict):
                 return Response(
-                    {"error": "Invalid door sensor response."},
+                    {
+                        "error": "Invalid door sensor response.",
+                        "door_status": None,
+                        "sensor_reading": None,
+                        "device_online": False,
+                        "stale": True,
+                    },
                     status=status.HTTP_502_BAD_GATEWAY,
                 )
 
@@ -142,7 +161,13 @@ class DoorStatusView(APIView):
                 or sensor_reading not in (0, 1)
             ):
                 return Response(
-                    {"error": "Invalid door sensor response."},
+                    {
+                        "error": "Invalid door sensor response.",
+                        "door_status": None,
+                        "sensor_reading": None,
+                        "device_online": False,
+                        "stale": True,
+                    },
                     status=status.HTTP_502_BAD_GATEWAY,
                 )
 
@@ -150,13 +175,17 @@ class DoorStatusView(APIView):
                 "door_status": door_status,
                 "sensor_reading": sensor_reading,
                 "device_online": True,
+                "stale": False,
                 "last_updated": timezone.now().isoformat(),
             })
         except (HTTPError, URLError, TimeoutError, OSError, ValueError):
             return Response(
                 {
                     "error": "Door controller is unavailable.",
+                    "door_status": None,
+                    "sensor_reading": None,
                     "device_online": False,
+                    "stale": True,
                 },
                 status=status.HTTP_502_BAD_GATEWAY,
             )
@@ -188,6 +217,16 @@ def door_state_webhook(request):
             status=400,
         )
 
+    source_event_id = payload.get("event_id")
+    if source_event_id is not None:
+        try:
+            source_event_id = UUID(source_event_id)
+        except (AttributeError, TypeError, ValueError):
+            return JsonResponse(
+                {"error": "Invalid event ID"},
+                status=400,
+            )
+
     laboratory_id = os.environ.get("SENTRYLAB_LABORATORY_ID", "")
     if not laboratory_id:
         return JsonResponse(
@@ -206,17 +245,37 @@ def door_state_webhook(request):
             status=500,
         )
 
-    SecurityEvent.objects.create(
-        laboratory=laboratory,
-        event_type="DOOR_LEFT_OPEN",
-        description="Door was left open beyond the configured threshold.",
-        severity="HIGH",
-    )
+    event_fields = {
+        "laboratory": laboratory,
+        "event_type": "DOOR_LEFT_OPEN",
+        "description": "Door was left open beyond the configured threshold.",
+        "severity": "HIGH",
+    }
+    if source_event_id is None:
+        SecurityEvent.objects.create(**event_fields)
+        created = True
+    else:
+        event, created = SecurityEvent.objects.get_or_create(
+            source_event_id=source_event_id,
+            defaults=event_fields,
+        )
+        if (
+            not created
+            and (
+                event.laboratory_id != laboratory.pk
+                or event.event_type != "DOOR_LEFT_OPEN"
+            )
+        ):
+            return JsonResponse(
+                {"error": "Event ID has already been used"},
+                status=409,
+            )
 
     return JsonResponse({
         "result": "OK",
-        "security_event_created": True,
-    }, status=201)
+        "security_event_created": created,
+        "event_id": str(source_event_id) if source_event_id else None,
+    }, status=201 if created else 200)
 
 
 class FingerprintScanView(APIView):
