@@ -5,6 +5,7 @@ from rest_framework import status, viewsets
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
+import hmac
 import cv2
 import numpy as np
 import json
@@ -159,6 +160,68 @@ class DoorStatusView(APIView):
                 },
                 status=status.HTTP_502_BAD_GATEWAY,
             )
+
+
+@csrf_exempt
+@require_POST
+def door_state_webhook(request):
+    expected_key = getattr(settings, "DOOR_EVENT_WEBHOOK_KEY", "")
+    supplied_key = request.headers.get("X-Door-Event-Key", "")
+    if not expected_key or not hmac.compare_digest(supplied_key, expected_key):
+        return JsonResponse({"error": "Forbidden"}, status=403)
+
+    try:
+        data = json.loads(request.body)
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+    if not isinstance(data, dict):
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+    door_status = data.get("door_status")
+    if door_status not in ("OPEN", "CLOSED"):
+        return JsonResponse({"error": "Invalid door status"}, status=400)
+
+    if door_status == "CLOSED":
+        return JsonResponse({
+            "result": "OK",
+            "message": "Door closed; no security event created.",
+        })
+
+    laboratory_id = getattr(settings, "SENTRYLAB_LABORATORY_ID", None)
+    if not str(laboratory_id or "").isdigit():
+        return JsonResponse(
+            {"error": "Active laboratory is not configured"},
+            status=503,
+        )
+
+    laboratory = Laboratory.objects.filter(
+        pk=int(laboratory_id),
+        is_active=True,
+    ).first()
+    if laboratory is None:
+        return JsonResponse(
+            {"error": "Active laboratory is not configured"},
+            status=503,
+        )
+
+    recent_grant = AuthenticationEvent.objects.filter(
+        laboratory=laboratory,
+        result="GRANTED",
+        timestamp__gte=timezone.now() - timedelta(seconds=30),
+    ).exists()
+    if not recent_grant:
+        SecurityEvent.objects.create(
+            laboratory=laboratory,
+            event_type="FORCED_ENTRY",
+            description="Door opened without a recent successful authentication.",
+            severity="HIGH",
+        )
+
+    return JsonResponse({
+        "result": "OK",
+        "security_event_created": not recent_grant,
+    })
 
 
 class FingerprintScanView(APIView):

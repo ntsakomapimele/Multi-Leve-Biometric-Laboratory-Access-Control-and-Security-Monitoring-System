@@ -16,6 +16,7 @@ from .models import (
 	FaceSample,
 	FingerprintChallenge,
 	Laboratory,
+	SecurityEvent,
 )
 
 
@@ -349,3 +350,94 @@ class DoorStatusApiTests(TestCase):
 
 		self.assertEqual(response.status_code, 502)
 		self.assertFalse(response.data["device_online"])
+
+
+class DoorStateWebhookTests(TestCase):
+	def setUp(self):
+		self.laboratory = Laboratory.objects.create(
+			name="Materials Lab",
+			location="Building A",
+		)
+		self.url = "/api/internal/door-state/"
+		self.headers = {"HTTP_X_DOOR_EVENT_KEY": "webhook-secret"}
+
+	def post_door_state(self, payload, **extra):
+		return self.client.post(
+			self.url,
+			data=json.dumps(payload),
+			content_type="application/json",
+			**(self.headers | extra),
+		)
+
+	def test_rejects_missing_or_incorrect_webhook_key(self):
+		with self.settings(DOOR_EVENT_WEBHOOK_KEY="webhook-secret"):
+			for headers in ({}, {"HTTP_X_DOOR_EVENT_KEY": "wrong-secret"}):
+				with self.subTest(headers=headers):
+					response = self.client.post(
+						self.url,
+						data=json.dumps({"door_status": "OPEN"}),
+						content_type="application/json",
+						**headers,
+					)
+
+					self.assertEqual(response.status_code, 403)
+		self.assertEqual(SecurityEvent.objects.count(), 0)
+
+	def test_open_without_recent_grant_creates_forced_entry_event(self):
+		with self.settings(
+			DOOR_EVENT_WEBHOOK_KEY="webhook-secret",
+			SENTRYLAB_LABORATORY_ID=str(self.laboratory.pk),
+		):
+			response = self.post_door_state({"door_status": "OPEN"})
+
+		self.assertEqual(response.status_code, 200)
+		self.assertTrue(response.json()["security_event_created"])
+		event = SecurityEvent.objects.get()
+		self.assertEqual(event.laboratory, self.laboratory)
+		self.assertEqual(event.event_type, "FORCED_ENTRY")
+		self.assertEqual(event.severity, "HIGH")
+
+	def test_recent_successful_authentication_prevents_event(self):
+		AuthenticationEvent.objects.create(
+			laboratory=self.laboratory,
+			result="GRANTED",
+		)
+		with self.settings(
+			DOOR_EVENT_WEBHOOK_KEY="webhook-secret",
+			SENTRYLAB_LABORATORY_ID=str(self.laboratory.pk),
+		):
+			response = self.post_door_state({"door_status": "OPEN"})
+
+		self.assertEqual(response.status_code, 200)
+		self.assertFalse(response.json()["security_event_created"])
+		self.assertEqual(SecurityEvent.objects.count(), 0)
+
+	def test_closed_door_does_not_create_event_or_require_laboratory(self):
+		with self.settings(DOOR_EVENT_WEBHOOK_KEY="webhook-secret"):
+			response = self.post_door_state({"door_status": "CLOSED"})
+
+		self.assertEqual(response.status_code, 200)
+		self.assertEqual(SecurityEvent.objects.count(), 0)
+
+	def test_invalid_payloads_are_rejected(self):
+		with self.settings(DOOR_EVENT_WEBHOOK_KEY="webhook-secret"):
+			for body in ("not-json", "[]", '{"door_status":"JAMMED"}'):
+				with self.subTest(body=body):
+					response = self.client.post(
+						self.url,
+						data=body,
+						content_type="application/json",
+						**self.headers,
+					)
+
+					self.assertEqual(response.status_code, 400)
+		self.assertEqual(SecurityEvent.objects.count(), 0)
+
+	def test_open_without_configured_active_laboratory_is_unavailable(self):
+		with self.settings(
+			DOOR_EVENT_WEBHOOK_KEY="webhook-secret",
+			SENTRYLAB_LABORATORY_ID="",
+		):
+			response = self.post_door_state({"door_status": "OPEN"})
+
+		self.assertEqual(response.status_code, 503)

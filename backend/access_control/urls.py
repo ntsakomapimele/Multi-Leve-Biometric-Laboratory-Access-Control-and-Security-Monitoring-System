@@ -14,6 +14,7 @@ from .views import (
     FaceEnrollmentView,
     FingerprintEnrollmentView,
     DoorStatusView,
+    door_state_webhook,
 )
 
 
@@ -49,6 +50,11 @@ router.register(
     UserViewSet,
 )
 urlpatterns = [
+    path(
+        "internal/door-state/",
+        door_state_webhook,
+        name="door-state-webhook",
+    ),
     path(
         "door/status/",
         DoorStatusView.as_view(),
