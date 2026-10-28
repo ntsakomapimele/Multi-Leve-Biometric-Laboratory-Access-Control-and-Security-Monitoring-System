@@ -165,63 +165,58 @@ class DoorStatusView(APIView):
 @csrf_exempt
 @require_POST
 def door_state_webhook(request):
-    expected_key = getattr(settings, "DOOR_EVENT_WEBHOOK_KEY", "")
+    expected_key = os.environ.get("DOOR_EVENT_WEBHOOK_KEY", "")
     supplied_key = request.headers.get("X-Door-Event-Key", "")
-    if not expected_key or not hmac.compare_digest(supplied_key, expected_key):
-        return JsonResponse({"error": "Forbidden"}, status=403)
+    if (
+        not expected_key
+        or not supplied_key
+        or not hmac.compare_digest(supplied_key, expected_key)
+    ):
+        return JsonResponse({"error": "Unauthorized"}, status=401)
 
     try:
-        data = json.loads(request.body)
+        payload = json.loads(request.body)
     except (json.JSONDecodeError, UnicodeDecodeError):
         return JsonResponse({"error": "Invalid JSON"}, status=400)
 
-    if not isinstance(data, dict):
+    if not isinstance(payload, dict):
         return JsonResponse({"error": "Invalid JSON"}, status=400)
 
-    door_status = data.get("door_status")
-    if door_status not in ("OPEN", "CLOSED"):
-        return JsonResponse({"error": "Invalid door status"}, status=400)
-
-    if door_status == "CLOSED":
-        return JsonResponse({
-            "result": "OK",
-            "message": "Door closed; no security event created.",
-        })
-
-    laboratory_id = getattr(settings, "SENTRYLAB_LABORATORY_ID", None)
-    if not str(laboratory_id or "").isdigit():
+    if payload.get("event_type") != "DOOR_LEFT_OPEN":
         return JsonResponse(
-            {"error": "Active laboratory is not configured"},
-            status=503,
+            {"error": "Unsupported event type"},
+            status=400,
         )
 
-    laboratory = Laboratory.objects.filter(
-        pk=int(laboratory_id),
-        is_active=True,
-    ).first()
-    if laboratory is None:
+    laboratory_id = os.environ.get("SENTRYLAB_LABORATORY_ID", "")
+    if not laboratory_id:
         return JsonResponse(
-            {"error": "Active laboratory is not configured"},
-            status=503,
+            {"error": "Laboratory ID is not configured"},
+            status=500,
         )
 
-    recent_grant = AuthenticationEvent.objects.filter(
+    try:
+        laboratory = Laboratory.objects.get(
+            pk=int(laboratory_id),
+            is_active=True,
+        )
+    except (ValueError, Laboratory.DoesNotExist):
+        return JsonResponse(
+            {"error": "Configured laboratory not found"},
+            status=500,
+        )
+
+    SecurityEvent.objects.create(
         laboratory=laboratory,
-        result="GRANTED",
-        timestamp__gte=timezone.now() - timedelta(seconds=30),
-    ).exists()
-    if not recent_grant:
-        SecurityEvent.objects.create(
-            laboratory=laboratory,
-            event_type="FORCED_ENTRY",
-            description="Door opened without a recent successful authentication.",
-            severity="HIGH",
-        )
+        event_type="DOOR_LEFT_OPEN",
+        description="Door was left open beyond the configured threshold.",
+        severity="HIGH",
+    )
 
     return JsonResponse({
         "result": "OK",
-        "security_event_created": not recent_grant,
-    })
+        "security_event_created": True,
+    }, status=201)
 
 
 class FingerprintScanView(APIView):

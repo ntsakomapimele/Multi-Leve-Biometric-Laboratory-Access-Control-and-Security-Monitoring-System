@@ -1,5 +1,6 @@
 from datetime import timedelta
 import json
+import os
 from unittest.mock import patch
 
 from django.contrib.auth.models import Group, User
@@ -370,58 +371,55 @@ class DoorStateWebhookTests(TestCase):
 		)
 
 	def test_rejects_missing_or_incorrect_webhook_key(self):
-		with self.settings(DOOR_EVENT_WEBHOOK_KEY="webhook-secret"):
+		with patch.dict(os.environ, {"DOOR_EVENT_WEBHOOK_KEY": "webhook-secret"}):
 			for headers in ({}, {"HTTP_X_DOOR_EVENT_KEY": "wrong-secret"}):
 				with self.subTest(headers=headers):
 					response = self.client.post(
 						self.url,
-						data=json.dumps({"door_status": "OPEN"}),
+						data=json.dumps({"event_type": "DOOR_LEFT_OPEN"}),
 						content_type="application/json",
 						**headers,
 					)
 
-					self.assertEqual(response.status_code, 403)
+					self.assertEqual(response.status_code, 401)
 		self.assertEqual(SecurityEvent.objects.count(), 0)
 
-	def test_open_without_recent_grant_creates_forced_entry_event(self):
-		with self.settings(
-			DOOR_EVENT_WEBHOOK_KEY="webhook-secret",
-			SENTRYLAB_LABORATORY_ID=str(self.laboratory.pk),
-		):
-			response = self.post_door_state({"door_status": "OPEN"})
+	def test_door_left_open_notification_creates_security_event(self):
+		with patch.dict(os.environ, {
+			"DOOR_EVENT_WEBHOOK_KEY": "webhook-secret",
+			"SENTRYLAB_LABORATORY_ID": str(self.laboratory.pk),
+		}):
+			response = self.post_door_state({"event_type": "DOOR_LEFT_OPEN"})
 
-		self.assertEqual(response.status_code, 200)
+		self.assertEqual(response.status_code, 201)
 		self.assertTrue(response.json()["security_event_created"])
 		event = SecurityEvent.objects.get()
 		self.assertEqual(event.laboratory, self.laboratory)
-		self.assertEqual(event.event_type, "FORCED_ENTRY")
+		self.assertEqual(event.event_type, "DOOR_LEFT_OPEN")
 		self.assertEqual(event.severity, "HIGH")
 
-	def test_recent_successful_authentication_prevents_event(self):
-		AuthenticationEvent.objects.create(
-			laboratory=self.laboratory,
-			result="GRANTED",
-		)
-		with self.settings(
-			DOOR_EVENT_WEBHOOK_KEY="webhook-secret",
-			SENTRYLAB_LABORATORY_ID=str(self.laboratory.pk),
-		):
-			response = self.post_door_state({"door_status": "OPEN"})
+	def test_each_accepted_notification_creates_one_event(self):
+		with patch.dict(os.environ, {
+			"DOOR_EVENT_WEBHOOK_KEY": "webhook-secret",
+			"SENTRYLAB_LABORATORY_ID": str(self.laboratory.pk),
+		}):
+			first_response = self.post_door_state({"event_type": "DOOR_LEFT_OPEN"})
+			second_response = self.post_door_state({"event_type": "DOOR_LEFT_OPEN"})
 
-		self.assertEqual(response.status_code, 200)
-		self.assertFalse(response.json()["security_event_created"])
-		self.assertEqual(SecurityEvent.objects.count(), 0)
+		self.assertEqual(first_response.status_code, 201)
+		self.assertEqual(second_response.status_code, 201)
+		self.assertEqual(SecurityEvent.objects.count(), 2)
 
-	def test_closed_door_does_not_create_event_or_require_laboratory(self):
-		with self.settings(DOOR_EVENT_WEBHOOK_KEY="webhook-secret"):
-			response = self.post_door_state({"door_status": "CLOSED"})
+	def test_unsupported_event_type_is_rejected(self):
+		with patch.dict(os.environ, {"DOOR_EVENT_WEBHOOK_KEY": "webhook-secret"}):
+			response = self.post_door_state({"event_type": "DOOR_CLOSED"})
 
-		self.assertEqual(response.status_code, 200)
+		self.assertEqual(response.status_code, 400)
 		self.assertEqual(SecurityEvent.objects.count(), 0)
 
 	def test_invalid_payloads_are_rejected(self):
-		with self.settings(DOOR_EVENT_WEBHOOK_KEY="webhook-secret"):
-			for body in ("not-json", "[]", '{"door_status":"JAMMED"}'):
+		with patch.dict(os.environ, {"DOOR_EVENT_WEBHOOK_KEY": "webhook-secret"}):
+			for body in ("not-json", "[]", '{"event_type":"DOOR_CLOSED"}'):
 				with self.subTest(body=body):
 					response = self.client.post(
 						self.url,
@@ -433,11 +431,23 @@ class DoorStateWebhookTests(TestCase):
 					self.assertEqual(response.status_code, 400)
 		self.assertEqual(SecurityEvent.objects.count(), 0)
 
-	def test_open_without_configured_active_laboratory_is_unavailable(self):
-		with self.settings(
-			DOOR_EVENT_WEBHOOK_KEY="webhook-secret",
-			SENTRYLAB_LABORATORY_ID="",
-		):
-			response = self.post_door_state({"door_status": "OPEN"})
+	def test_missing_laboratory_configuration_is_server_error(self):
+		with patch.dict(os.environ, {
+			"DOOR_EVENT_WEBHOOK_KEY": "webhook-secret",
+			"SENTRYLAB_LABORATORY_ID": "",
+		}):
+			response = self.post_door_state({"event_type": "DOOR_LEFT_OPEN"})
 
-		self.assertEqual(response.status_code, 503)
+		self.assertEqual(response.status_code, 500)
+
+	def test_inactive_laboratory_is_not_accepted(self):
+		self.laboratory.is_active = False
+		self.laboratory.save(update_fields=["is_active"])
+		with patch.dict(os.environ, {
+			"DOOR_EVENT_WEBHOOK_KEY": "webhook-secret",
+			"SENTRYLAB_LABORATORY_ID": str(self.laboratory.pk),
+		}):
+			response = self.post_door_state({"event_type": "DOOR_LEFT_OPEN"})
+
+		self.assertEqual(response.status_code, 500)
+		self.assertEqual(SecurityEvent.objects.count(), 0)
