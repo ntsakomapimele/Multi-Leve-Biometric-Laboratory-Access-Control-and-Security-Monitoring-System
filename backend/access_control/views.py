@@ -801,7 +801,7 @@ class FingerprintEnrollmentView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # Only one user can be enrolled at a time on this scanner.
+        # Keep the active enrollment associated with its original user.
         if cache.get(self.CACHE_KEY):
             return Response(
                 {"message": "Another fingerprint enrollment is in progress."},
@@ -809,21 +809,6 @@ class FingerprintEnrollmentView(APIView):
             )
 
         try:
-            device_status = self.device_request(
-                "/enrollment/status",
-                method="GET",
-            )
-
-            if device_status.get("result") not in ("IDLE", "ENROLL_IDLE"):
-                return Response(
-                    {
-                        "message": "The fingerprint reader is busy.",
-                        "device": device_status,
-                    },
-                    status=status.HTTP_409_CONFLICT,
-                )
-
-            # Store the target user before starting the physical enrollment.
             cache.set(
                 self.CACHE_KEY,
                 target_user.pk,
@@ -845,7 +830,24 @@ class FingerprintEnrollmentView(APIView):
                         "message": started.get(
                             "message",
                             "The reader could not start enrollment.",
-                        )
+                        ),
+                        "device": started,
+                    },
+                    status=status.HTTP_502_BAD_GATEWAY,
+                )
+
+            if result not in {
+                "WAITING_FIRST_FINGER",
+                "WAITING_FOR_REMOVAL",
+                "WAITING_SECOND_FINGER",
+            }:
+                cache.delete(self.CACHE_KEY)
+                return Response(
+                    {
+                        "message": (
+                            "The reader did not confirm that enrollment started."
+                        ),
+                        "device": started,
                     },
                     status=status.HTTP_502_BAD_GATEWAY,
                 )
