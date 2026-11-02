@@ -48,7 +48,6 @@ from .serializers import (
     SecurityEventSerializer,
     AccessAuthenticationSerializer,
     FingerprintScanRequestSerializer,
-    ReaderTestSerializer,
     UserSerializer,
 )
 from .face_recognition import extract_face, matches_sample
@@ -615,11 +614,6 @@ class AuthenticateView(APIView):
         if not access_granted:
             door_message = "Access denied. Door remains locked."
 
-        elif source == "READER_TEST":
-            door_message = (
-                "Access checks passed. Reader test does not unlock the door."
-            )
-
         elif source == "TERMINAL":
             device_url = getattr(
                 settings,
@@ -713,26 +707,6 @@ class AuthenticateView(APIView):
                 if access_granted
                 else status.HTTP_403_FORBIDDEN
             ),
-        )
-
-
-class ReaderTestView(APIView):
-    permission_classes = [IsAdministrator]
-
-    def post(self, request):
-        serializer = ReaderTestSerializer(data=request.data)
-        if not serializer.is_valid():
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-        try:
-            user = User.objects.get(username=serializer.validated_data["username"], is_active=True)
-        except User.DoesNotExist:
-            return Response({"result": "DENIED", "message": "Active user does not exist."}, status=status.HTTP_404_NOT_FOUND)
-        return AuthenticateView._finish_scan(
-            user,
-            serializer.validated_data["laboratory_id"],
-            serializer.validated_data["face_verified"],
-            serializer.validated_data["fingerprint_verified"],
-            "READER_TEST",
         )
 
 

@@ -10,7 +10,6 @@ import BiometricProfiles from "./pages/BiometricProfiles";
 import AccessPermissions from "./pages/AccessPermissions";
 import AuthenticationEvents from "./pages/AuthenticationEvents";
 import SecurityEvents from "./pages/SecurityEvents";
-import Authenticate from "./pages/Authenticate";
 import AccessTerminal from "./pages/AccessTerminal";
 import NotFound from "./pages/NotFound";
 
@@ -34,7 +33,6 @@ export default function App() {
         <Route path="/permissions" element={<Protected path="/permissions"><AccessPermissions /></Protected>} />
         <Route path="/authentication-events" element={<Protected path="/authentication-events"><AuthenticationEvents /></Protected>} />
         <Route path="/security-events" element={<Protected path="/security-events"><SecurityEvents /></Protected>} />
-        <Route path="/authenticate" element={<Protected path="/authenticate"><Authenticate /></Protected>} />
         <Route path="/terminal" element={<AccessTerminal />} />
 
         <Route path="*" element={<NotFound />} />

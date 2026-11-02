@@ -342,7 +342,6 @@ export default function Dashboard() {
         <div className="hardware-readiness">
           <div className="hardware-readiness-head">
             <div><span className="terminal-kicker">SYSTEM READINESS</span><h2>Reader hardware</h2></div>
-            <span className="hardware-mode"><span className="status-dot status-warning" />TEST MODE</span>
           </div>
           <div className="hardware-state-grid">
             <HardwareState label="Face recognition" state="Configured" tone="good" detail="OpenCV service" />

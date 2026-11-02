@@ -168,8 +168,6 @@ const scanFingerprint = async () => {
         <Link to="/" className="terminal-brand"><span className="brand-mark" />SentryLab <span>/ ACCESS TERMINAL</span></Link>
         <div className="terminal-device-state">
           <span className="status-dot status-warning" />
-          <span>TEST MODE</span>
-          <span className="terminal-divider" />
           <span>DOOR CONTROLLER OFFLINE</span>
           <Link to="/" className="terminal-exit">Exit terminal</Link>
         </div>
@@ -266,4 +264,3 @@ const scanFingerprint = async () => {
     </div>
   );
 }
-

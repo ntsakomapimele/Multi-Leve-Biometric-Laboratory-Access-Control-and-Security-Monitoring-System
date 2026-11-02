@@ -10,7 +10,6 @@ from .views import (
     UserViewSet,
     AuthenticateView,
     FingerprintScanView,
-    ReaderTestView,
     FaceEnrollmentView,
     FingerprintEnrollmentView,
     DoorStatusView,
@@ -62,7 +61,6 @@ urlpatterns = [
     ),
     path("authenticate/", AuthenticateView.as_view()),
     path("fingerprint-scan/", FingerprintScanView.as_view()),
-    path("reader-test/", ReaderTestView.as_view()),
     path("face-enroll/", FaceEnrollmentView.as_view()),
     path(
     "fingerprint-enrollment/start/",

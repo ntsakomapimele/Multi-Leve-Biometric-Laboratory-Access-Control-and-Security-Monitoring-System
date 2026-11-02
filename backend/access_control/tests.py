@@ -38,33 +38,9 @@ class AuthenticateViewTests(TestCase):
 			"fingerprint_verified": True,
 		}
 
-	def test_grants_access_with_current_permission_and_biometrics(self):
-		AccessPermission.objects.create(
-			user=self.user,
-			laboratory=self.laboratory,
-			valid_from=timezone.now() - timedelta(minutes=1),
-			valid_until=timezone.now() + timedelta(minutes=1),
-		)
-
-		response = self.client.post("/api/reader-test/", self.payload)
-
-		self.assertEqual(response.status_code, 200)
-		self.assertEqual(response.data["result"], "GRANTED")
-		self.assertEqual(response.data["source"], "READER_TEST")
-		self.assertEqual(AuthenticationEvent.objects.count(), 1)
-
-	def test_denies_access_when_permission_is_outside_validity_window(self):
-		AccessPermission.objects.create(
-			user=self.user,
-			laboratory=self.laboratory,
-			valid_until=timezone.now() - timedelta(minutes=1),
-		)
-
-		response = self.client.post("/api/reader-test/", self.payload)
-
-		self.assertEqual(response.status_code, 403)
-		self.assertEqual(response.data["result"], "DENIED")
-		self.assertEqual(response.data["denial_reason"], "No active permission for this laboratory.")
+	def test_reader_test_endpoint_is_removed(self):
+		response = self.client.post("/api/reader-test/", self.payload, format="json")
+		self.assertEqual(response.status_code, 404)
 
 	def test_live_terminal_requires_a_face_image_and_never_trusts_client_flags(self):
 		AccessPermission.objects.create(
@@ -257,15 +233,6 @@ class UserAndPermissionApiTests(TestCase):
 		self.assertEqual(response.status_code, 200)
 		self.assertEqual(response.data["username"], "operator")
 		self.assertEqual(FingerprintChallenge.objects.count(), 1)
-
-	def test_reader_test_is_administrator_only(self):
-		self.client.force_authenticate(self.operator)
-		response = self.client.post(
-			"/api/reader-test/",
-			{"username": self.operator.username, "laboratory_id": self.laboratory.id, "face_verified": True, "fingerprint_verified": True},
-			format="json",
-		)
-		self.assertEqual(response.status_code, 403)
 
 	def test_permission_accepts_username(self):
 		self.client.force_authenticate(self.admin)

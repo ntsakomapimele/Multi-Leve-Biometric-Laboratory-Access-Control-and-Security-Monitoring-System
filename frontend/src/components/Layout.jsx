@@ -27,7 +27,6 @@ const NAV_SECTIONS = [
     label: "Console",
     items: [
       { to: "/terminal", label: "Access Terminal", icon: "▣" },
-      { to: "/authenticate", label: "Reader Test", icon: "▶" },
     ],
   },
 ];

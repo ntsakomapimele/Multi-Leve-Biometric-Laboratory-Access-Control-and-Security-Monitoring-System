@@ -137,12 +137,5 @@ class AccessAuthenticationSerializer(serializers.Serializer):
     
 
 
-class ReaderTestSerializer(serializers.Serializer):
-    username = serializers.CharField()
-    laboratory_id = serializers.IntegerField()
-    face_verified = serializers.BooleanField()
-    fingerprint_verified = serializers.BooleanField()
-
-
 class FingerprintScanRequestSerializer(serializers.Serializer):
     laboratory_id = serializers.IntegerField(min_value=1)

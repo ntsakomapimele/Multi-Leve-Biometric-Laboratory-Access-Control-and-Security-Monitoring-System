@@ -12,7 +12,6 @@ export const ROLE_ACCESS = {
     "/permissions",
     "/authentication-events",
     "/security-events",
-    "/authenticate",
     "/terminal",
   ],
   [ROLES.SECURITY_OFFICER]: [
